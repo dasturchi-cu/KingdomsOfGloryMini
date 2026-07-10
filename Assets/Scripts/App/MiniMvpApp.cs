@@ -236,8 +236,9 @@ namespace KoG.MiniMvp.App
             if (_cocCamera == null) _cocCamera = cam.gameObject.AddComponent<CoCCameraController>();
             if (cam.GetComponent<UnityEngine.EventSystems.PhysicsRaycaster>() == null)
                 cam.gameObject.AddComponent<UnityEngine.EventSystems.PhysicsRaycaster>();
-            _cocCamera.Configure(FieldCenter, FieldWorldSize, 3f);
-            _cocCamera.FocusBase(FieldCenter, FieldWorldSize * 0.78f);
+            _cocCamera.Configure(FieldCenter, FieldWorldSize, 4.5f);
+            // Portrait phone: slightly tighter so base + nature fill the screen (CoC feel).
+            _cocCamera.FocusBase(FieldCenter, FieldWorldSize * 0.62f);
             BaseLightingSetup.Apply(FieldCenter);
         }
 
@@ -764,7 +765,7 @@ namespace KoG.MiniMvp.App
             }
 
             if (_cocCamera != null)
-                _cocCamera.FocusBase(focus, FieldWorldSize * 0.78f);
+                _cocCamera.FocusBase(focus, FieldWorldSize * 0.62f);
         }
 
         void ClearBuildings()

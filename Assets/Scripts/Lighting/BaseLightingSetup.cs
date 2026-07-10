@@ -4,33 +4,35 @@ using UnityEngine.Rendering;
 namespace KoG.MiniMvp.Lighting
 {
     /// <summary>
-    /// Mobile-friendly CoC-style day lighting for the Mini-MVP base view.
-    /// One directional sun + trilight ambient; no extra realtime lights.
+    /// CoC-style day lighting + soft fog so the phone view feels filled and smooth.
     /// </summary>
     public static class BaseLightingSetup
     {
         const string SunName = "KoG_Sun";
 
-        /// <summary>Apply ambient + sun + camera clear color. Safe to call every BuildGround.</summary>
         public static void Apply(Vector3 fieldCenter)
         {
             RenderSettings.ambientMode = AmbientMode.Trilight;
-            RenderSettings.ambientSkyColor = new Color(0.52f, 0.70f, 0.92f);
-            RenderSettings.ambientEquatorColor = new Color(0.78f, 0.82f, 0.70f);
-            RenderSettings.ambientGroundColor = new Color(0.38f, 0.34f, 0.28f);
-            RenderSettings.ambientIntensity = 1f;
-            RenderSettings.fog = false;
-            RenderSettings.subtractiveShadowColor = new Color(0.40f, 0.46f, 0.52f);
-            RenderSettings.reflectionIntensity = 0.35f;
+            RenderSettings.ambientSkyColor = new Color(0.55f, 0.72f, 0.95f);
+            RenderSettings.ambientEquatorColor = new Color(0.82f, 0.86f, 0.72f);
+            RenderSettings.ambientGroundColor = new Color(0.32f, 0.40f, 0.26f);
+            RenderSettings.ambientIntensity = 1.05f;
+            RenderSettings.subtractiveShadowColor = new Color(0.35f, 0.42f, 0.38f);
+            RenderSettings.reflectionIntensity = 0.25f;
+
+            // Soft distance haze — hides hard world edge, CoC-like depth.
+            RenderSettings.fog = true;
+            RenderSettings.fogMode = FogMode.ExponentialSquared;
+            RenderSettings.fogColor = new Color(0.55f, 0.72f, 0.88f);
+            RenderSettings.fogDensity = 0.012f;
 
             var sun = EnsureSun();
             sun.transform.position = fieldCenter + new Vector3(-8f, 18f, -6f);
-            // High afternoon sun — readable building silhouettes on the diamond field.
-            sun.transform.rotation = Quaternion.Euler(52f, -40f, 0f);
-            sun.color = new Color(1f, 0.95f, 0.86f);
-            sun.intensity = 1.2f;
-            sun.shadows = LightShadows.Hard; // Mobile_RPAsset soft shadows off
-            sun.shadowStrength = 0.62f;
+            sun.transform.rotation = Quaternion.Euler(50f, -38f, 0f);
+            sun.color = new Color(1f, 0.96f, 0.88f);
+            sun.intensity = 1.15f;
+            sun.shadows = LightShadows.Hard;
+            sun.shadowStrength = 0.55f;
             sun.shadowBias = 0.04f;
             sun.shadowNormalBias = 0.35f;
             sun.shadowNearPlane = 0.2f;
@@ -40,9 +42,11 @@ namespace KoG.MiniMvp.Lighting
             if (cam != null)
             {
                 cam.clearFlags = CameraClearFlags.SolidColor;
-                cam.backgroundColor = new Color(0.42f, 0.70f, 0.90f);
+                // Soft sky — matches fog, no harsh cyan void.
+                cam.backgroundColor = new Color(0.52f, 0.74f, 0.92f);
                 cam.allowHDR = false;
-                cam.allowMSAA = false;
+                cam.allowMSAA = true;
+                cam.farClipPlane = 220f;
             }
         }
 
@@ -55,7 +59,6 @@ namespace KoG.MiniMvp.Lighting
                 if (lit != null) return lit;
             }
 
-            // Reuse scene Directional Light if present.
             var lights = Object.FindObjectsByType<Light>(FindObjectsSortMode.None);
             for (var i = 0; i < lights.Length; i++)
             {

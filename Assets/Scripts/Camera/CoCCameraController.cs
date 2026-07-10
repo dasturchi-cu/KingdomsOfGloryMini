@@ -16,9 +16,9 @@ namespace KoG.MiniMvp.Camera
         const float PanSpeed = 0.024f;
         const float PinchZoomSpeed = 0.0045f;
         const float ScrollZoomSpeed = 1.35f;
-        const float MinOrtho = 5.5f;
-        const float MaxOrtho = 17f;
-        const float UiBottomGuardPx = 175f;
+        const float MinOrtho = 7f;
+        const float MaxOrtho = 16f;
+        const float UiBottomGuardPx = 190f;
         const float SoftClampStrength = 10f;
         const float FocusLerp = 7.5f;
 
@@ -107,7 +107,8 @@ namespace KoG.MiniMvp.Camera
             _cam.nearClipPlane = 0.1f;
             _cam.farClipPlane = 200f;
             _cam.clearFlags = CameraClearFlags.SolidColor;
-            _cam.backgroundColor = new Color(0.45f, 0.72f, 0.92f, 1f);
+            _cam.backgroundColor = new Color(0.52f, 0.74f, 0.92f);
+            _cam.allowMSAA = true;
             _cam.transform.rotation = Quaternion.Euler(PitchDeg, YawDeg, 0f);
             OrthoSize = _cam.orthographicSize;
         }
