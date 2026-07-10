@@ -24,8 +24,10 @@ namespace KoG.MiniMvp.App
         }
 
         [Header("Backend")]
-        [Tooltip("Editor/dev: http://127.0.0.1:3000. Release builds should use HTTPS.")]
+        [Tooltip("Editor / DEVELOPMENT_BUILD only. Cleartext allowed via insecureHttpOption=DevelopmentOnly.")]
         [SerializeField] string baseUrl = "http://127.0.0.1:3000";
+        [Tooltip("Non-dev player builds. Must be HTTPS.")]
+        [SerializeField] string releaseBaseUrl = "https://api.kingdomsofglory.com";
 
         [Header("Grid")]
         [SerializeField] int gridSize = 15;
@@ -63,6 +65,22 @@ namespace KoG.MiniMvp.App
 
         Vector3 GridToWorld(int gridX, int gridZ) => new Vector3(gridX * cellSize, 0f, gridZ * cellSize);
 
+        string ResolveBaseUrl()
+        {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            return string.IsNullOrWhiteSpace(baseUrl) ? "http://127.0.0.1:3000" : baseUrl.Trim();
+#else
+            var url = string.IsNullOrWhiteSpace(releaseBaseUrl) ? baseUrl : releaseBaseUrl;
+            url = (url ?? string.Empty).Trim();
+            if (url.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
+            {
+                Debug.LogError("[MiniMvp] Release build refuses cleartext HTTP — set releaseBaseUrl to HTTPS");
+                url = "https://api.kingdomsofglory.com";
+            }
+            return url.TrimEnd('/');
+#endif
+        }
+
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         static void AutoBootstrap()
         {
@@ -73,7 +91,7 @@ namespace KoG.MiniMvp.App
 
         void Awake()
         {
-            _api = new ApiClient(baseUrl);
+            _api = new ApiClient(ResolveBaseUrl());
             // Scene-ga qo'lda tashlangan AI prefab Play'da yotib qoladi / dublikat.
             // Faqat Resources orqali spawn qilingan castle_1 ishlatiladi.
             DestroyLooseSceneCastles();
@@ -587,10 +605,11 @@ namespace KoG.MiniMvp.App
                     go.name = type + "_" + level;
                     go.SetActive(true);
                     UrpMaterialUtil.RemapToUrp(go);
-                    ApplyCastleAlbedoIfMissing(go);
-                    FitBuildingToCell(go, gridX, gridZ, 3.8f, forceUpright: true);
-                    OrientCastleTowardCamera(go, gridX, gridZ);
-                    EnsureClickCollider(go);
+                    BuildingFitUtil.ApplyCastleAlbedoIfMissing(go);
+                    var cell = GridToWorld(gridX, gridZ);
+                    BuildingFitUtil.FitToCell(go, cell, 3.8f, forceUpright: true);
+                    BuildingFitUtil.OrientTowardCamera(go, cell);
+                    BuildingFitUtil.EnsureClickCollider(go);
 
                     var rends = go.GetComponentsInChildren<Renderer>(true);
                     var hasMesh = false;
@@ -633,7 +652,7 @@ namespace KoG.MiniMvp.App
             marker.gridX = gridX;
             marker.gridZ = gridZ;
 
-            EnsureClickCollider(go);
+            BuildingFitUtil.EnsureClickCollider(go);
 
             var click = go.GetComponent<BuildingClickRelay>();
             if (click == null) click = go.AddComponent<BuildingClickRelay>();
@@ -644,157 +663,6 @@ namespace KoG.MiniMvp.App
             };
 
             _buildingViews[id] = go;
-        }
-
-        /// <summary>
-        /// Scales and plants a prefab so its footprint fits one grid cell and sits on the ground.
-        /// forceUpright: always pick the tallest orientation (Tripo FBX often lies flat).
-        /// </summary>
-        void FitBuildingToCell(GameObject go, int gridX, int gridZ, float targetFootprint, bool forceUpright = false)
-        {
-            go.transform.localScale = Vector3.one;
-            go.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
-
-            var renderers = go.GetComponentsInChildren<Renderer>(true);
-            if (renderers == null || renderers.Length == 0)
-            {
-                go.transform.position = GridToWorld(gridX, gridZ);
-                go.transform.localScale = Vector3.one * 0.8f;
-                return;
-            }
-
-            foreach (var r in renderers)
-            {
-                r.enabled = true;
-                r.gameObject.SetActive(true);
-            }
-
-            // Prefer child-baked -90° (Castle.prefab). Rotate root only when still flat / forced search.
-            var upright = EncapsulateBounds(renderers);
-            var footprint0 = Mathf.Max(upright.size.x, upright.size.z, 0.01f);
-            var alreadyUpright = upright.size.y >= footprint0 * 0.85f;
-
-            // Always score orientations for castle — picks tallest (avoids double -90 on prefab).
-            if (forceUpright || !alreadyUpright)
-            {
-                var candidates = new[]
-                {
-                    Quaternion.identity,
-                    Quaternion.Euler(-90f, 0f, 0f),
-                    Quaternion.Euler(-90f, 90f, 0f),
-                    Quaternion.Euler(-90f, -90f, 0f),
-                    Quaternion.Euler(-90f, 180f, 0f),
-                    Quaternion.Euler(90f, 0f, 0f),
-                };
-
-                var bestRot = Quaternion.identity;
-                var bestScore = float.NegativeInfinity;
-                foreach (var rot in candidates)
-                {
-                    go.transform.SetPositionAndRotation(Vector3.zero, rot);
-                    var b = EncapsulateBounds(renderers);
-                    var fp = Mathf.Max(b.size.x, b.size.z, 0.01f);
-                    var score = b.size.y - fp * 0.15f;
-                    if (score > bestScore)
-                    {
-                        bestScore = score;
-                        bestRot = rot;
-                    }
-                }
-
-                go.transform.SetPositionAndRotation(Vector3.zero, bestRot);
-                Debug.Log("[MiniMvp] Castle rot=" + bestRot.eulerAngles + " hScore=" + bestScore.ToString("F2") + " wasUpright=" + alreadyUpright);
-            }
-
-            var bounds = EncapsulateBounds(renderers);
-            var sizeXZ = Mathf.Max(bounds.size.x, bounds.size.z, 0.01f);
-            var scale = targetFootprint / sizeXZ;
-            scale = Mathf.Clamp(scale, 0.5f, 25f);
-            go.transform.localScale = Vector3.one * scale;
-
-            bounds = EncapsulateBounds(renderers);
-            sizeXZ = Mathf.Max(bounds.size.x, bounds.size.z, 0.01f);
-            if (Mathf.Abs(sizeXZ - targetFootprint) > 0.05f)
-            {
-                go.transform.localScale *= targetFootprint / sizeXZ;
-                bounds = EncapsulateBounds(renderers);
-            }
-
-            // Final sanity: if still flatter than tall, force -90° X once more.
-            if (forceUpright && bounds.size.y < Mathf.Max(bounds.size.x, bounds.size.z) * 0.75f)
-            {
-                var e = go.transform.eulerAngles;
-                go.transform.rotation = Quaternion.Euler(e.x - 90f, e.y, e.z);
-                bounds = EncapsulateBounds(renderers);
-                Debug.LogWarning("[MiniMvp] Castle still flat — forced extra -90 X");
-            }
-
-            var cell = GridToWorld(gridX, gridZ);
-            var delta = cell - new Vector3(bounds.center.x, bounds.min.y, bounds.center.z);
-            go.transform.position += delta;
-            Debug.Log("[MiniMvp] Castle fit h=" + bounds.size.y.ToString("F2") + " fp=" + Mathf.Max(bounds.size.x, bounds.size.z).ToString("F2") + " scale=" + go.transform.localScale.x.ToString("F2"));
-        }
-
-        /// <summary>
-        /// CoC-style: castle faces the camera (front door toward viewer), slightly diagonal.
-        /// </summary>
-        void OrientCastleTowardCamera(GameObject go, int gridX, int gridZ)
-        {
-            var cam = UnityEngine.Camera.main;
-            var cell = GridToWorld(gridX, gridZ);
-            var toCam = (cam != null ? cam.transform.position : cell + new Vector3(12f, 20f, -12f)) - cell;
-            toCam.y = 0f;
-            if (toCam.sqrMagnitude < 0.0001f) return;
-
-            // Face camera; +25° = "sal qiya" 3/4 view (not flat front-on).
-            var yaw = Quaternion.LookRotation(toCam.normalized).eulerAngles.y + 25f;
-            var e = go.transform.eulerAngles;
-            go.transform.rotation = Quaternion.Euler(e.x, yaw, e.z);
-
-            // Re-plant after yaw (mesh bounds shift on XZ).
-            var renderers = go.GetComponentsInChildren<Renderer>(true);
-            if (renderers == null || renderers.Length == 0) return;
-            var bounds = EncapsulateBounds(renderers);
-            var delta = cell - new Vector3(bounds.center.x, bounds.min.y, bounds.center.z);
-            go.transform.position += delta;
-        }
-
-        static void ApplyCastleAlbedoIfMissing(GameObject go)
-        {
-            var albedo = Resources.Load<Texture2D>("Buildings/CastleMeshTextures/Color_5f773bf5-b6c0-45d4-bd53-2e31d222e9f7");
-            if (albedo == null) return;
-            foreach (var r in go.GetComponentsInChildren<Renderer>(true))
-            {
-                var shared = r.sharedMaterials;
-                if (shared == null) continue;
-                var next = new Material[shared.Length];
-                var changed = false;
-                for (var i = 0; i < shared.Length; i++)
-                {
-                    var m = shared[i];
-                    if (m == null) { next[i] = null; continue; }
-                    if (m.mainTexture != null)
-                    {
-                        next[i] = m;
-                        continue;
-                    }
-                    // Clone once into URP cache path via Remap — here just assign albedo on a copy.
-                    var copy = new Material(m);
-                    copy.mainTexture = albedo;
-                    if (copy.HasProperty("_BaseMap")) copy.SetTexture("_BaseMap", albedo);
-                    if (copy.HasProperty("_MainTex")) copy.SetTexture("_MainTex", albedo);
-                    next[i] = copy;
-                    changed = true;
-                }
-                if (changed) r.sharedMaterials = next;
-            }
-        }
-
-        static Bounds EncapsulateBounds(Renderer[] renderers)
-        {
-            var bounds = renderers[0].bounds;
-            for (var i = 1; i < renderers.Length; i++) bounds.Encapsulate(renderers[i].bounds);
-            return bounds;
         }
 
         void FrameCameraOnBase()
@@ -808,7 +676,7 @@ namespace KoG.MiniMvp.App
                 if (marker == null || marker.buildingType != "castle") continue;
                 var renderers = view.GetComponentsInChildren<Renderer>(true);
                 if (renderers == null || renderers.Length == 0) break;
-                var b = EncapsulateBounds(renderers);
+                var b = BuildingFitUtil.EncapsulateBounds(renderers);
                 focus = new Vector3(b.center.x, 0f, b.center.z);
                 break;
             }
@@ -829,29 +697,6 @@ namespace KoG.MiniMvp.App
 
             if (_cocCamera != null)
                 _cocCamera.FocusBase(focus, FieldWorldSize * 0.78f);
-        }
-
-        static void EnsureClickCollider(GameObject go)
-        {
-            if (go.GetComponentInChildren<Collider>() != null) return;
-            var renderers = go.GetComponentsInChildren<Renderer>(true);
-            var box = go.AddComponent<BoxCollider>();
-            if (renderers != null && renderers.Length > 0)
-            {
-                var b = EncapsulateBounds(renderers);
-                var localCenter = go.transform.InverseTransformPoint(b.center);
-                var lossy = go.transform.lossyScale;
-                box.center = localCenter;
-                box.size = new Vector3(
-                    Mathf.Max(b.size.x / Mathf.Max(lossy.x, 0.001f), 0.5f),
-                    Mathf.Max(b.size.y / Mathf.Max(lossy.y, 0.001f), 0.5f),
-                    Mathf.Max(b.size.z / Mathf.Max(lossy.z, 0.001f), 0.5f));
-            }
-            else
-            {
-                box.size = new Vector3(2.5f, 2.5f, 2.5f);
-                box.center = new Vector3(0f, 1.2f, 0f);
-            }
         }
 
         void ClearBuildings()
