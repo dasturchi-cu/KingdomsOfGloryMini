@@ -70,18 +70,30 @@ namespace KoG.MiniMvp.World
             ForceMobileStylized(go);
         }
 
-        /// <summary>Low gloss + GPU instancing — CoC matte look, fewer draw calls.</summary>
+        /// <summary>Low gloss + GPU instancing — mutates shared mats via cache (no per-renderer clones).</summary>
         public static void ForceMobileStylized(GameObject go)
         {
             foreach (var r in go.GetComponentsInChildren<Renderer>(true))
             {
-                var mats = r.materials;
-                for (var i = 0; i < mats.Length; i++)
+                var shared = r.sharedMaterials;
+                if (shared == null || shared.Length == 0) continue;
+                var next = new Material[shared.Length];
+                var changed = false;
+                for (var i = 0; i < shared.Length; i++)
                 {
-                    if (mats[i] == null) continue;
-                    ApplyMobileSurface(mats[i]);
+                    var src = shared[i];
+                    if (src == null) { next[i] = null; continue; }
+                    var key = src.GetInstanceID() ^ 0x5A5A0000;
+                    if (!Cache.TryGetValue(key, out var polished))
+                    {
+                        polished = new Material(src);
+                        ApplyMobileSurface(polished);
+                        Cache[key] = polished;
+                    }
+                    next[i] = polished;
+                    if (!ReferenceEquals(polished, src)) changed = true;
                 }
-                r.materials = mats;
+                if (changed) r.sharedMaterials = next;
             }
         }
 

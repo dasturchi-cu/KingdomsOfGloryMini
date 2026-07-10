@@ -97,6 +97,7 @@ namespace KoG.MiniMvp.World
                 MarkStatic(border);
                 UrpMaterialUtil.RemapToUrp(border);
                 OptimizeNatureRenderers(border);
+                NatureVisualPolish.Apply(border, fieldWorldSize, fieldCenter);
             }
             else
             {
@@ -105,6 +106,7 @@ namespace KoG.MiniMvp.World
             }
 
             BuildingGrid.Build(gameplay.transform, gridSize, cellSize, fieldCenter);
+            // Camera/Sun parenting happens after MiniMvpApp creates them — see FinalizeHierarchy.
 
             Debug.Log("[MiniMvp] Reference village built — field=" + fieldWorldSize +
                       " grid=" + gridSize + "x" + gridSize + " cell=" + cellSize +
@@ -112,6 +114,37 @@ namespace KoG.MiniMvp.World
 
             // Return BaseField transform for MiniMvpApp field-root compatibility.
             return fieldRoot;
+        }
+
+        /// <summary>Call after camera + KoG_Sun exist — clean Village hierarchy.</summary>
+        public static void FinalizeHierarchy()
+        {
+            var village = GameObject.Find("Village");
+            if (village == null) return;
+
+            var camNode = village.transform.Find("Camera");
+            if (camNode == null)
+            {
+                var go = new GameObject("Camera");
+                go.transform.SetParent(village.transform, false);
+                camNode = go.transform;
+            }
+
+            var lightNode = village.transform.Find("Lighting");
+            if (lightNode == null)
+            {
+                var go = new GameObject("Lighting");
+                go.transform.SetParent(village.transform, false);
+                lightNode = go.transform;
+            }
+
+            var cam = UnityEngine.Camera.main;
+            if (cam != null && (cam.transform.parent == null || cam.transform.parent.name != "Camera"))
+                cam.transform.SetParent(camNode, true);
+
+            var sun = GameObject.Find("KoG_Sun");
+            if (sun != null && (sun.transform.parent == null || sun.transform.parent.name != "Lighting"))
+                sun.transform.SetParent(lightNode, true);
         }
 
         static void BuildProceduralChecker(Transform parent, int gridSize, float fieldWorldSize)

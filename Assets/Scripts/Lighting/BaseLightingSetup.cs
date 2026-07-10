@@ -15,13 +15,13 @@ namespace KoG.MiniMvp.Lighting
             ApplyMobileQuality();
 
             RenderSettings.ambientMode = AmbientMode.Trilight;
-            // Warm midday — reference is bright fantasy, not cold URP default.
-            RenderSettings.ambientSkyColor = new Color(0.68f, 0.82f, 0.95f);
-            RenderSettings.ambientEquatorColor = new Color(0.92f, 0.93f, 0.74f);
-            RenderSettings.ambientGroundColor = new Color(0.40f, 0.50f, 0.30f);
-            RenderSettings.ambientIntensity = 1.15f;
-            RenderSettings.subtractiveShadowColor = new Color(0.32f, 0.42f, 0.30f);
-            RenderSettings.reflectionIntensity = 0.15f;
+            // Warm midday + slight saturation boost (reference fantasy greens).
+            RenderSettings.ambientSkyColor = new Color(0.70f, 0.84f, 0.96f);
+            RenderSettings.ambientEquatorColor = new Color(0.94f, 0.95f, 0.72f);
+            RenderSettings.ambientGroundColor = new Color(0.38f, 0.52f, 0.28f);
+            RenderSettings.ambientIntensity = 1.18f;
+            RenderSettings.subtractiveShadowColor = new Color(0.28f, 0.40f, 0.26f);
+            RenderSettings.reflectionIntensity = 0.12f;
 
             // Very light haze — keep scene clean like the reference.
             RenderSettings.fog = true;
@@ -33,8 +33,8 @@ namespace KoG.MiniMvp.Lighting
             sun.transform.position = fieldCenter + new Vector3(-9f, 20f, -7f);
             // Top-left key light (matches reference shadow direction).
             sun.transform.rotation = Quaternion.Euler(46f, -32f, 0f);
-            sun.color = new Color(1f, 0.98f, 0.90f);
-            sun.intensity = 1.25f;
+            sun.color = new Color(1f, 0.99f, 0.88f);
+            sun.intensity = 1.28f;
             sun.shadows = LightShadows.Soft;
             sun.shadowStrength = 0.38f;
             sun.shadowBias = 0.035f;

@@ -241,6 +241,7 @@ namespace KoG.MiniMvp.App
             // Reference framing: full diamond + nature border, CoC / M&G feel.
             _cocCamera.FocusBase(FieldCenter, FieldWorldSize * 0.55f);
             BaseLightingSetup.Apply(FieldCenter);
+            FieldVisualBuilder.FinalizeHierarchy();
         }
 
 
@@ -410,8 +411,12 @@ namespace KoG.MiniMvp.App
             if (cell == null)
             {
                 SetStatus("No free cell");
+                PlacePreviewFx.Show(FieldCenter, cellSize, false);
                 yield break;
             }
+
+            var previewWorld = GridToWorld(cell.Value.x, cell.Value.y);
+            PlacePreviewFx.Show(previewWorld, cellSize, true);
 
             SetBusy(true);
             SetStatus("Placing " + buildingType + "...");
@@ -430,6 +435,7 @@ namespace KoG.MiniMvp.App
                 (code, text) =>
                 {
                     SetBusy(false);
+                    PlacePreviewFx.Hide();
                     if (code < 200 || code >= 300)
                     {
                         var err = ExtractError(text);
