@@ -3,10 +3,15 @@ using UnityEngine;
 namespace KoG.MiniMvp.World
 {
     /// <summary>
-    /// Checkerboard base field. Nature ring delegated to NatureBorderBuilder.
+    /// Recreates the uploaded CoC / Might &amp; Glory starter village reference.
+    /// Uses authored BaseField_L1 + NatureBorder_L1 as the single visual source of truth
+    /// (same proportions, empty center, border composition). Falls back to procedural nature only if prefabs missing.
     /// </summary>
     public static class FieldVisualBuilder
     {
+        /// <summary>Authored BaseField_L1 mesh half-extent (AABB). Full playable size = 22.</summary>
+        public const float AuthoredFieldSize = 22f;
+
         static Material _sharedFieldMat;
         static Texture2D _sharedCheckerTex;
 
@@ -15,7 +20,7 @@ namespace KoG.MiniMvp.World
             ClearStaleGround();
             var fieldWorldSize = gridSize * cellSize;
             var fieldCenter = new Vector3((gridSize - 1) * cellSize * 0.5f, 0f, (gridSize - 1) * cellSize * 0.5f);
-            return BuildCheckerboardField(gridSize, fieldWorldSize, fieldCenter).transform;
+            return BuildReferenceVillage(gridSize, cellSize, fieldWorldSize, fieldCenter).transform;
         }
 
         static void ClearStaleGround()
@@ -25,36 +30,93 @@ namespace KoG.MiniMvp.World
             {
                 var go = roots[i];
                 if (go == null) continue;
-                if (go.name == "Ground" || go.name == "Plane" || go.name == "BaseField")
+                if (go.name == "Ground" || go.name == "Plane" || go.name == "BaseField" ||
+                    go.name == "Village" || go.name == "ReferenceVillage")
                     Object.Destroy(go);
             }
         }
 
-        static GameObject BuildCheckerboardField(int gridSize, float fieldWorldSize, Vector3 fieldCenter)
+        static GameObject BuildReferenceVillage(int gridSize, float cellSize, float fieldWorldSize, Vector3 fieldCenter)
         {
+            // Hierarchy matches production env layout.
+            var village = new GameObject("Village");
+            village.transform.position = Vector3.zero;
+
+            var terrain = new GameObject("Terrain");
+            terrain.transform.SetParent(village.transform, false);
+
+            var environment = new GameObject("Environment");
+            environment.transform.SetParent(village.transform, false);
+
+            var nature = new GameObject("Nature");
+            nature.transform.SetParent(environment.transform, false);
+
+            var decorations = new GameObject("Decorations");
+            decorations.transform.SetParent(environment.transform, false);
+
+            var gameplay = new GameObject("Gameplay");
+            gameplay.transform.SetParent(village.transform, false);
+
+            var fieldRoot = new GameObject("BaseField");
+            fieldRoot.transform.SetParent(terrain.transform, false);
+            fieldRoot.transform.position = fieldCenter;
+
             var fieldPrefab = Resources.Load<GameObject>("Environment/BaseField_L1");
+            var borderPrefab = Resources.Load<GameObject>("Environment/NatureBorder_L1");
+
             if (fieldPrefab != null)
             {
-                var root = new GameObject("BaseField");
-                root.transform.position = fieldCenter;
-
-                var field = Object.Instantiate(fieldPrefab, root.transform);
+                var field = Object.Instantiate(fieldPrefab, fieldRoot.transform);
                 field.name = "CheckerGrass";
                 field.transform.localPosition = Vector3.zero;
                 field.transform.localRotation = Quaternion.identity;
-                FitEnvPrefabToSize(field, fieldWorldSize);
+                // Keep authored proportions — scale uniformly to measured playable size.
+                // Authored mesh is 22×22 — scale to measured playable size, keep centered.
+                ApplyUniformScale(field, AuthoredFieldSize, fieldWorldSize);
                 StripColliders(field);
-
-                NatureBorderBuilder.Build(root.transform, fieldWorldSize);
-                return root;
+                MarkStatic(field);
+                UrpMaterialUtil.RemapToUrp(field);
+            }
+            else
+            {
+                BuildProceduralChecker(fieldRoot.transform, gridSize, fieldWorldSize);
             }
 
-            var procedural = new GameObject("BaseField");
-            procedural.transform.position = fieldCenter;
+            if (borderPrefab != null)
+            {
+                // CRITICAL: same world center + same scale factor as BaseField (reference 1:1).
+                // Do NOT re-center on nature AABB — that would shift the authored composition.
+                var border = Object.Instantiate(borderPrefab, nature.transform);
+                border.name = "NatureBorder_L1";
+                border.transform.position = fieldCenter;
+                border.transform.localRotation = Quaternion.identity;
+                ApplyUniformScale(border, AuthoredFieldSize, fieldWorldSize);
+                StripColliders(border);
+                MarkStatic(border);
+                UrpMaterialUtil.RemapToUrp(border);
+                OptimizeNatureRenderers(border);
+            }
+            else
+            {
+                // Fallback only — not the reference composition.
+                NatureBorderBuilder.Build(fieldRoot.transform, fieldWorldSize);
+            }
 
+            BuildingGrid.Build(gameplay.transform, gridSize, cellSize, fieldCenter);
+
+            Debug.Log("[MiniMvp] Reference village built — field=" + fieldWorldSize +
+                      " grid=" + gridSize + "x" + gridSize + " cell=" + cellSize +
+                      " border=" + (borderPrefab != null));
+
+            // Return BaseField transform for MiniMvpApp field-root compatibility.
+            return fieldRoot;
+        }
+
+        static void BuildProceduralChecker(Transform parent, int gridSize, float fieldWorldSize)
+        {
             var plane = GameObject.CreatePrimitive(PrimitiveType.Plane);
             plane.name = "CheckerGrass";
-            plane.transform.SetParent(procedural.transform, false);
+            plane.transform.SetParent(parent, false);
             var s = fieldWorldSize / 10f;
             plane.transform.localPosition = Vector3.zero;
             plane.transform.localRotation = Quaternion.identity;
@@ -86,31 +148,39 @@ namespace KoG.MiniMvp.World
             rend.sharedMaterial = _sharedFieldMat;
             rend.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             rend.receiveShadows = true;
-
-            NatureBorderBuilder.Build(procedural.transform, fieldWorldSize);
-            return procedural;
         }
 
-        static void FitEnvPrefabToSize(GameObject go, float targetSize)
+        /// <summary>
+        /// Uniform scale from authored playable size → runtime field size.
+        /// Preserves reference composition (no AABB re-centering).
+        /// </summary>
+        static void ApplyUniformScale(GameObject go, float authoredSize, float targetSize)
         {
             go.transform.localScale = Vector3.one;
-            var renderers = go.GetComponentsInChildren<Renderer>(true);
-            if (renderers == null || renderers.Length == 0) return;
-
-            var bounds = EncapsulateBounds(renderers);
-            var sizeXZ = Mathf.Max(bounds.size.x, bounds.size.z, 0.01f);
-            var scale = Mathf.Clamp(targetSize / sizeXZ, 0.05f, 50f);
+            var scale = Mathf.Clamp(targetSize / Mathf.Max(authoredSize, 0.01f), 0.05f, 50f);
             go.transform.localScale = Vector3.one * scale;
+        }
 
-            bounds = EncapsulateBounds(renderers);
-            var localCenter = go.transform.parent != null
-                ? go.transform.parent.InverseTransformPoint(bounds.center)
-                : bounds.center;
-            var localMinY = go.transform.parent != null
-                ? go.transform.parent.InverseTransformPoint(new Vector3(bounds.center.x, bounds.min.y, bounds.center.z)).y
-                : bounds.min.y;
-            var lp = go.transform.localPosition;
-            go.transform.localPosition = new Vector3(lp.x - localCenter.x, lp.y - localMinY, lp.z - localCenter.z);
+        static void OptimizeNatureRenderers(GameObject go)
+        {
+            foreach (var r in go.GetComponentsInChildren<Renderer>(true))
+            {
+                r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
+                r.receiveShadows = true;
+                r.allowOcclusionWhenDynamic = true;
+                var mats = r.sharedMaterials;
+                for (var i = 0; i < mats.Length; i++)
+                {
+                    if (mats[i] != null) mats[i].enableInstancing = true;
+                }
+            }
+        }
+
+        static void MarkStatic(GameObject go)
+        {
+            go.isStatic = true;
+            foreach (var t in go.GetComponentsInChildren<Transform>(true))
+                t.gameObject.isStatic = true;
         }
 
         static void StripColliders(GameObject go)
@@ -127,9 +197,10 @@ namespace KoG.MiniMvp.World
             tex.wrapMode = TextureWrapMode.Clamp;
             tex.name = "FieldChecker";
 
-            var light = new Color(0.58f, 0.82f, 0.38f);
-            var dark = new Color(0.40f, 0.62f, 0.30f);
-            var edge = new Color(0.32f, 0.48f, 0.24f);
+            // Match reference: soft lime checker, not harsh contrast.
+            var light = new Color(0.62f, 0.86f, 0.40f);
+            var dark = new Color(0.48f, 0.72f, 0.34f);
+            var edge = new Color(0.36f, 0.54f, 0.26f);
 
             for (var y = 0; y < size; y++)
             {
@@ -139,21 +210,13 @@ namespace KoG.MiniMvp.World
                     var cy = y / pixelsPerCell;
                     var c = ((cx + cy) & 1) == 0 ? light : dark;
                     if (cx == 0 || cy == 0 || cx == cells - 1 || cy == cells - 1)
-                        c = Color.Lerp(c, edge, 0.45f);
+                        c = Color.Lerp(c, edge, 0.4f);
                     tex.SetPixel(x, y, c);
                 }
             }
 
             tex.Apply(false, true);
             return tex;
-        }
-
-        static Bounds EncapsulateBounds(Renderer[] renderers)
-        {
-            var bounds = renderers[0].bounds;
-            for (var i = 1; i < renderers.Length; i++)
-                bounds.Encapsulate(renderers[i].bounds);
-            return bounds;
         }
     }
 }

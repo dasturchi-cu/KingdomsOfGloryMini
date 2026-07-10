@@ -1,0 +1,103 @@
+using UnityEngine;
+
+namespace KoG.MiniMvp.World
+{
+    /// <summary>
+    /// Invisible RTS building grid that fills the playable BaseField.
+    /// Hidden in Play mode; editor gizmos for placement/snapping.
+    /// </summary>
+    public sealed class BuildingGrid : MonoBehaviour
+    {
+        [SerializeField] int gridSize = 20;
+        [SerializeField] float cellSize = 1.1f;
+        [SerializeField] bool drawGizmos = true;
+        [SerializeField] Color gizmoColor = new Color(1f, 1f, 1f, 0.22f);
+
+        /// <summary>World position of cell (0,0) center.</summary>
+        public Vector3 Origin { get; private set; }
+
+        public int GridSize => gridSize;
+        public float CellSize => cellSize;
+        public float WorldSize => gridSize * cellSize;
+
+        public static BuildingGrid Build(Transform parent, int size, float cell, Vector3 fieldCenter)
+        {
+            var go = new GameObject("BuildingGrid");
+            go.transform.SetParent(parent, false);
+            go.transform.position = fieldCenter;
+            go.layer = 0;
+
+            var grid = go.AddComponent<BuildingGrid>();
+            grid.gridSize = size;
+            grid.cellSize = cell;
+            // Cell (0,0) world = (0,0,0) in MiniMvpApp GridToWorld; field center is mid-cell.
+            grid.Origin = Vector3.zero;
+            grid.EnsureSnapSurface();
+            return grid;
+        }
+
+        void EnsureSnapSurface()
+        {
+            // Thin trigger plane for future raycast snapping — not visible.
+            var plane = GameObject.CreatePrimitive(PrimitiveType.Quad);
+            plane.name = "SnapSurface";
+            plane.transform.SetParent(transform, false);
+            plane.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+            plane.transform.localPosition = Vector3.up * 0.01f;
+            var world = WorldSize;
+            plane.transform.localScale = new Vector3(world, world, 1f);
+
+            var rend = plane.GetComponent<Renderer>();
+            if (rend != null) rend.enabled = false;
+
+            var col = plane.GetComponent<Collider>();
+            if (col != null) col.isTrigger = true;
+        }
+
+        public Vector3 GridToWorld(int x, int z)
+        {
+            return new Vector3(x * cellSize, 0f, z * cellSize);
+        }
+
+        public bool WorldToGrid(Vector3 world, out int x, out int z)
+        {
+            x = Mathf.RoundToInt(world.x / cellSize);
+            z = Mathf.RoundToInt(world.z / cellSize);
+            return x >= 0 && z >= 0 && x < gridSize && z < gridSize;
+        }
+
+        public Vector3 SnapWorld(Vector3 world)
+        {
+            if (!WorldToGrid(world, out var x, out var z))
+            {
+                x = Mathf.Clamp(Mathf.RoundToInt(world.x / cellSize), 0, gridSize - 1);
+                z = Mathf.Clamp(Mathf.RoundToInt(world.z / cellSize), 0, gridSize - 1);
+            }
+            return GridToWorld(x, z);
+        }
+
+        void OnDrawGizmos()
+        {
+            if (!drawGizmos) return;
+            if (!Application.isPlaying && gridSize <= 0) return;
+
+            Gizmos.color = gizmoColor;
+            var half = cellSize * 0.5f;
+            for (var z = 0; z < gridSize; z++)
+            {
+                for (var x = 0; x < gridSize; x++)
+                {
+                    var c = GridToWorld(x, z);
+                    var p0 = new Vector3(c.x - half, 0.02f, c.z - half);
+                    var p1 = new Vector3(c.x + half, 0.02f, c.z - half);
+                    var p2 = new Vector3(c.x + half, 0.02f, c.z + half);
+                    var p3 = new Vector3(c.x - half, 0.02f, c.z + half);
+                    Gizmos.DrawLine(p0, p1);
+                    Gizmos.DrawLine(p1, p2);
+                    Gizmos.DrawLine(p2, p3);
+                    Gizmos.DrawLine(p3, p0);
+                }
+            }
+        }
+    }
+}

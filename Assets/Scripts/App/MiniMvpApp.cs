@@ -30,8 +30,9 @@ namespace KoG.MiniMvp.App
         [SerializeField] string releaseBaseUrl = "https://api.kingdomsofglory.com";
 
         [Header("Grid")]
-        [SerializeField] int gridSize = 15;
-        [SerializeField] float cellSize = 1.2f;
+        // Measured from BaseField_L1 mesh (22×22) → 20 cells × 1.1 = 22 world units.
+        [SerializeField] int gridSize = 20;
+        [SerializeField] float cellSize = 1.1f;
 
         ApiClient _api;
         UiScreen _screen = UiScreen.Auth;
@@ -236,9 +237,9 @@ namespace KoG.MiniMvp.App
             if (_cocCamera == null) _cocCamera = cam.gameObject.AddComponent<CoCCameraController>();
             if (cam.GetComponent<UnityEngine.EventSystems.PhysicsRaycaster>() == null)
                 cam.gameObject.AddComponent<UnityEngine.EventSystems.PhysicsRaycaster>();
-            _cocCamera.Configure(FieldCenter, FieldWorldSize, 4.5f);
-            // Portrait phone: slightly tighter so base + nature fill the screen (CoC feel).
-            _cocCamera.FocusBase(FieldCenter, FieldWorldSize * 0.62f);
+            _cocCamera.Configure(FieldCenter, FieldWorldSize, 5.5f);
+            // Reference framing: full diamond + nature border visible (CoC / M&G).
+            _cocCamera.FocusBase(FieldCenter, FieldWorldSize * 0.58f);
             BaseLightingSetup.Apply(FieldCenter);
         }
 
@@ -640,7 +641,8 @@ namespace KoG.MiniMvp.App
             {
                 for (var x = 0; x < gridSize; x++)
                 {
-                    if (x == 7 && z == 7) continue;
+                    // Reserve map center for future castle / HQ — keep empty until gameplay places it.
+                    if (x == gridSize / 2 && z == gridSize / 2) continue;
                     var key = x + ":" + z;
                     if (!occupied.Contains(key)) return new Vector2Int(x, z);
                 }

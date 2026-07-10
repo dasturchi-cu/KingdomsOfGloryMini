@@ -8,16 +8,16 @@ namespace KoG.MiniMvp.Camera
     /// </summary>
     public sealed class CoCCameraController : MonoBehaviour
     {
-        const float PitchDeg = 55f;
+        const float PitchDeg = 52f;
         const float YawDeg = 45f;
-        const float CamDistance = 42f;
+        const float CamDistance = 44f;
         const float DragThresholdPx = 8f;
         const float MomentumDamping = 5.5f;
         const float PanSpeed = 0.024f;
         const float PinchZoomSpeed = 0.0045f;
         const float ScrollZoomSpeed = 1.35f;
-        const float MinOrtho = 7f;
-        const float MaxOrtho = 16f;
+        const float MinOrtho = 8f;
+        const float MaxOrtho = 18f;
         const float UiBottomGuardPx = 190f;
         const float SoftClampStrength = 10f;
         const float FocusLerp = 7.5f;

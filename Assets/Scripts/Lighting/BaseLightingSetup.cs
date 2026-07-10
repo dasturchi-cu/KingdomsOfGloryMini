@@ -13,26 +13,27 @@ namespace KoG.MiniMvp.Lighting
         public static void Apply(Vector3 fieldCenter)
         {
             RenderSettings.ambientMode = AmbientMode.Trilight;
-            RenderSettings.ambientSkyColor = new Color(0.55f, 0.72f, 0.95f);
-            RenderSettings.ambientEquatorColor = new Color(0.82f, 0.86f, 0.72f);
-            RenderSettings.ambientGroundColor = new Color(0.32f, 0.40f, 0.26f);
-            RenderSettings.ambientIntensity = 1.05f;
-            RenderSettings.subtractiveShadowColor = new Color(0.35f, 0.42f, 0.38f);
-            RenderSettings.reflectionIntensity = 0.25f;
+            RenderSettings.ambientSkyColor = new Color(0.62f, 0.78f, 0.95f);
+            RenderSettings.ambientEquatorColor = new Color(0.88f, 0.90f, 0.72f);
+            RenderSettings.ambientGroundColor = new Color(0.36f, 0.46f, 0.28f);
+            RenderSettings.ambientIntensity = 1.1f;
+            RenderSettings.subtractiveShadowColor = new Color(0.38f, 0.46f, 0.36f);
+            RenderSettings.reflectionIntensity = 0.2f;
 
             // Soft distance haze — hides hard world edge, CoC-like depth.
             RenderSettings.fog = true;
             RenderSettings.fogMode = FogMode.ExponentialSquared;
-            RenderSettings.fogColor = new Color(0.55f, 0.72f, 0.88f);
-            RenderSettings.fogDensity = 0.012f;
+            RenderSettings.fogColor = new Color(0.62f, 0.78f, 0.90f);
+            RenderSettings.fogDensity = 0.008f;
 
             var sun = EnsureSun();
             sun.transform.position = fieldCenter + new Vector3(-8f, 18f, -6f);
-            sun.transform.rotation = Quaternion.Euler(50f, -38f, 0f);
-            sun.color = new Color(1f, 0.96f, 0.88f);
-            sun.intensity = 1.15f;
-            sun.shadows = LightShadows.Hard;
-            sun.shadowStrength = 0.55f;
+            // Reference: light from top-left, soft warm midday.
+            sun.transform.rotation = Quaternion.Euler(48f, -35f, 0f);
+            sun.color = new Color(1f, 0.97f, 0.90f);
+            sun.intensity = 1.2f;
+            sun.shadows = LightShadows.Soft;
+            sun.shadowStrength = 0.42f;
             sun.shadowBias = 0.04f;
             sun.shadowNormalBias = 0.35f;
             sun.shadowNearPlane = 0.2f;
@@ -42,8 +43,8 @@ namespace KoG.MiniMvp.Lighting
             if (cam != null)
             {
                 cam.clearFlags = CameraClearFlags.SolidColor;
-                // Soft sky — matches fog, no harsh cyan void.
-                cam.backgroundColor = new Color(0.52f, 0.74f, 0.92f);
+                // Soft warm sky — reference midday fantasy, not harsh cyan.
+                cam.backgroundColor = new Color(0.58f, 0.78f, 0.92f);
                 cam.allowHDR = false;
                 cam.allowMSAA = true;
                 cam.farClipPlane = 220f;
