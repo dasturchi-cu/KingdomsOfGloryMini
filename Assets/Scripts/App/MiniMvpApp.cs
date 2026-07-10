@@ -123,6 +123,7 @@ namespace KoG.MiniMvp.App
             {
                 SessionStore.Clear();
                 ClearBuildings();
+                BuildingSelectFx.Clear();
                 SetScreen(UiScreen.Auth);
                 SetStatus("Logged out");
             };
@@ -174,6 +175,25 @@ namespace KoG.MiniMvp.App
             _hud.SetResources(_gold, _barbarianCount);
             if (_screen == UiScreen.Result)
                 _hud.SetResultMessage(_resultMessage);
+
+            if (!string.IsNullOrEmpty(_selectedBuildingId) &&
+                _buildingViews.TryGetValue(_selectedBuildingId, out var sel) && sel != null)
+            {
+                var m = sel.GetComponent<BuildingMarker>();
+                _hud.SetSelected(m != null ? PrettyType(m.buildingType) + " L" + m.level : _selectedBuildingId);
+            }
+            else
+            {
+                _hud.SetSelected(null);
+            }
+        }
+
+        static string PrettyType(string type)
+        {
+            if (type == "gold_mine") return "Gold Mine";
+            if (type == "barracks") return "Barracks";
+            if (type == "castle") return "Castle";
+            return type ?? "?";
         }
 
         static void DestroyLooseSceneCastles()
@@ -356,6 +376,11 @@ namespace KoG.MiniMvp.App
 
                 SetStatus(BuildNextStepHint(hasMine, hasBarracks, buildingCount));
                 FrameCameraOnBase();
+                if (!string.IsNullOrEmpty(_selectedBuildingId) &&
+                    _buildingViews.TryGetValue(_selectedBuildingId, out var selGo))
+                    BuildingSelectFx.Select(selGo);
+                else
+                    BuildingSelectFx.Clear();
                 RefreshHud();
             });
         }
@@ -418,7 +443,12 @@ namespace KoG.MiniMvp.App
                     _gold = res.goldBalance;
                     SpawnBuilding(res.building.id, res.building.type, res.building.level, res.building.gridX, res.building.gridZ);
                     _selectedBuildingId = res.building.id;
-                    SetStatus("OK: " + buildingType + " qo'yildi. Gold=" + _gold);
+                    var world = GridToWorld(res.building.gridX, res.building.gridZ);
+                    WorldFeedback.PlaceBurst(world);
+                    BuildingSelectFx.Select(_buildingViews[res.building.id]);
+                    if (_cocCamera != null) _cocCamera.FocusSmooth(world);
+                    SetStatus("OK: " + PrettyType(buildingType) + " qo'yildi");
+                    RefreshHud();
                 });
         }
 
@@ -426,6 +456,7 @@ namespace KoG.MiniMvp.App
         {
             SetBusy(true);
             SetStatus("Collecting...");
+            var before = _gold;
             var body = JsonObject(("playerId", SessionStore.PlayerId));
             yield return _api.PostJson("/api/v1/resources/collect", body, SessionStore.Token, null, (code, text) =>
             {
@@ -436,7 +467,27 @@ namespace KoG.MiniMvp.App
                     return;
                 }
 
-                SetStatus("Collected. State yangilanmoqda...");
+                // Float near selected mine or field center.
+                Vector3 floatPos = FieldCenter + Vector3.up;
+                if (!string.IsNullOrEmpty(_selectedBuildingId) &&
+                    _buildingViews.TryGetValue(_selectedBuildingId, out var view) && view != null)
+                    floatPos = view.transform.position + Vector3.up * 1.1f;
+                else
+                {
+                    foreach (var v in _buildingViews.Values)
+                    {
+                        var m = v != null ? v.GetComponent<BuildingMarker>() : null;
+                        if (m != null && m.buildingType == "gold_mine")
+                        {
+                            floatPos = v.transform.position + Vector3.up * 1.1f;
+                            break;
+                        }
+                    }
+                }
+
+                WorldFeedback.FloatLabel(floatPos, "+GOLD", new Color(1f, 0.85f, 0.2f));
+                WorldFeedback.PlaceBurst(floatPos);
+                SetStatus("Collected (+ from " + before + "). Yangilanmoqda...");
                 StartCoroutine(LoadPlayerState());
             });
         }
@@ -462,7 +513,19 @@ namespace KoG.MiniMvp.App
 
                 var res = JsonUtility.FromJson<TrainResponse>(text);
                 _barbarianCount += res.trainedQuantity;
-                SetStatus("Trained " + res.trainedQuantity + " barbarians. Total=" + _barbarianCount);
+                Vector3 floatPos = FieldCenter + Vector3.up;
+                foreach (var v in _buildingViews.Values)
+                {
+                    var m = v != null ? v.GetComponent<BuildingMarker>() : null;
+                    if (m != null && m.buildingType == "barracks")
+                    {
+                        floatPos = v.transform.position + Vector3.up * 1.2f;
+                        break;
+                    }
+                }
+                WorldFeedback.FloatLabel(floatPos, "+" + res.trainedQuantity + " ⚔", new Color(0.7f, 0.9f, 1f));
+                SetStatus("Trained " + res.trainedQuantity + " · jami " + _barbarianCount);
+                RefreshHud();
             });
         }
 
@@ -659,10 +722,15 @@ namespace KoG.MiniMvp.App
             click.onClick = () =>
             {
                 _selectedBuildingId = id;
-                SetStatus("Selected: " + type + " L" + level);
+                BuildingSelectFx.Select(go);
+                if (_cocCamera != null)
+                    _cocCamera.FocusSmooth(GridToWorld(gridX, gridZ));
+                SetStatus("Selected: " + PrettyType(type) + " L" + level);
             };
 
             _buildingViews[id] = go;
+            if (id == _selectedBuildingId)
+                BuildingSelectFx.Select(go);
         }
 
         void FrameCameraOnBase()

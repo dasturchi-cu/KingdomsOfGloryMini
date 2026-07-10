@@ -4,25 +4,29 @@ namespace KoG.MiniMvp.Camera
 {
     /// <summary>
     /// Clash of Clans / Might &amp; Glory style orthographic base camera.
-    /// One-finger (or mouse) pan with momentum, pinch/scroll zoom, soft field bounds.
+    /// Simulator-tuned: soft edge bounce, smooth focus, pinch/scroll zoom, momentum pan.
     /// </summary>
     public sealed class CoCCameraController : MonoBehaviour
     {
         const float PitchDeg = 55f;
         const float YawDeg = 45f;
         const float CamDistance = 42f;
-        const float DragThresholdPx = 10f;
-        const float MomentumDamping = 6.5f;
-        const float PanSpeed = 0.022f;
-        const float PinchZoomSpeed = 0.004f;
-        const float ScrollZoomSpeed = 1.2f;
-        const float MinOrtho = 6f;
-        const float MaxOrtho = 18f;
+        const float DragThresholdPx = 8f;
+        const float MomentumDamping = 5.5f;
+        const float PanSpeed = 0.024f;
+        const float PinchZoomSpeed = 0.0045f;
+        const float ScrollZoomSpeed = 1.35f;
+        const float MinOrtho = 5.5f;
+        const float MaxOrtho = 17f;
         const float UiBottomGuardPx = 175f;
+        const float SoftClampStrength = 10f;
+        const float FocusLerp = 7.5f;
 
         UnityEngine.Camera _cam;
         Vector3 _fieldCenter;
         Vector3 _focus;
+        Vector3 _smoothTarget;
+        bool _smoothing;
         float _halfExtent = 12f;
         float _boundsPadding = 2.5f;
 
@@ -51,11 +55,12 @@ namespace KoG.MiniMvp.Camera
             if (_cam == null) _cam = UnityEngine.Camera.main;
         }
 
-        /// <summary>Bind playable field for pan clamps and initial framing.</summary>
         public void Configure(Vector3 fieldCenter, float fieldWorldSize, float boundsPadding = 2.5f)
         {
             _fieldCenter = new Vector3(fieldCenter.x, 0f, fieldCenter.z);
             _focus = _fieldCenter;
+            _smoothTarget = _focus;
+            _smoothing = false;
             _halfExtent = Mathf.Max(fieldWorldSize * 0.5f, 4f);
             _boundsPadding = boundsPadding;
             _velocity = Vector3.zero;
@@ -63,15 +68,25 @@ namespace KoG.MiniMvp.Camera
             ApplyTransform();
         }
 
-        /// <summary>Snap to a focus point (e.g. after base/castle load).</summary>
         public void FocusBase(Vector3 focus, float orthoSize)
         {
             _focus = new Vector3(focus.x, 0f, focus.z);
+            _smoothTarget = _focus;
+            _smoothing = false;
             _velocity = Vector3.zero;
             OrthoSize = orthoSize;
-            ClampFocus();
+            SoftClampFocus(hard: true);
             EnsureCameraPose();
             ApplyTransform();
+        }
+
+        /// <summary>Smooth pan toward a building (selection / place) — simulator feel.</summary>
+        public void FocusSmooth(Vector3 focus, float? orthoSize = null)
+        {
+            _smoothTarget = new Vector3(focus.x, 0f, focus.z);
+            _smoothing = true;
+            _velocity = Vector3.zero;
+            if (orthoSize.HasValue) OrthoSize = orthoSize.Value;
         }
 
         void Update()
@@ -80,7 +95,8 @@ namespace KoG.MiniMvp.Camera
             HandleTouch();
             HandleMouseEditor();
             ApplyMomentum();
-            ClampFocus();
+            ApplySmoothFocus();
+            SoftClampFocus(hard: false);
             ApplyTransform();
         }
 
@@ -90,6 +106,8 @@ namespace KoG.MiniMvp.Camera
             _cam.orthographic = true;
             _cam.nearClipPlane = 0.1f;
             _cam.farClipPlane = 200f;
+            _cam.clearFlags = CameraClearFlags.SolidColor;
+            _cam.backgroundColor = new Color(0.45f, 0.72f, 0.92f, 1f);
             _cam.transform.rotation = Quaternion.Euler(PitchDeg, YawDeg, 0f);
             OrthoSize = _cam.orthographicSize;
         }
@@ -102,12 +120,44 @@ namespace KoG.MiniMvp.Camera
             _cam.transform.position = _focus - rot * Vector3.forward * CamDistance;
         }
 
-        void ClampFocus()
+        void SoftClampFocus(bool hard)
         {
             var lim = _halfExtent + _boundsPadding;
-            _focus.x = Mathf.Clamp(_focus.x, _fieldCenter.x - lim, _fieldCenter.x + lim);
-            _focus.z = Mathf.Clamp(_focus.z, _fieldCenter.z - lim, _fieldCenter.z + lim);
+            var minX = _fieldCenter.x - lim;
+            var maxX = _fieldCenter.x + lim;
+            var minZ = _fieldCenter.z - lim;
+            var maxZ = _fieldCenter.z + lim;
+
+            if (hard)
+            {
+                _focus.x = Mathf.Clamp(_focus.x, minX, maxX);
+                _focus.z = Mathf.Clamp(_focus.z, minZ, maxZ);
+                _focus.y = 0f;
+                return;
+            }
+
+            // Elastic pull-back when past soft edge (CoC simulator feel).
+            if (_focus.x < minX) _focus.x = Mathf.Lerp(_focus.x, minX, SoftClampStrength * Time.deltaTime);
+            else if (_focus.x > maxX) _focus.x = Mathf.Lerp(_focus.x, maxX, SoftClampStrength * Time.deltaTime);
+            if (_focus.z < minZ) _focus.z = Mathf.Lerp(_focus.z, minZ, SoftClampStrength * Time.deltaTime);
+            else if (_focus.z > maxZ) _focus.z = Mathf.Lerp(_focus.z, maxZ, SoftClampStrength * Time.deltaTime);
             _focus.y = 0f;
+
+            // Hard safety if dragged far.
+            var hardLim = lim + 3.5f;
+            _focus.x = Mathf.Clamp(_focus.x, _fieldCenter.x - hardLim, _fieldCenter.x + hardLim);
+            _focus.z = Mathf.Clamp(_focus.z, _fieldCenter.z - hardLim, _fieldCenter.z + hardLim);
+        }
+
+        void ApplySmoothFocus()
+        {
+            if (!_smoothing) return;
+            _focus = Vector3.Lerp(_focus, _smoothTarget, 1f - Mathf.Exp(-FocusLerp * Time.deltaTime));
+            if (( _focus - _smoothTarget).sqrMagnitude < 0.0025f)
+            {
+                _focus = _smoothTarget;
+                _smoothing = false;
+            }
         }
 
         void HandleTouch()
@@ -134,6 +184,7 @@ namespace KoG.MiniMvp.Camera
                 {
                     OrthoSize -= (dist - _lastPinchDist) * PinchZoomSpeed;
                     _velocity = Vector3.zero;
+                    _smoothing = false;
                 }
                 _lastPinchDist = dist;
                 _dragging = false;
@@ -152,6 +203,7 @@ namespace KoG.MiniMvp.Camera
                 _dragging = true;
                 _panArmed = false;
                 _velocity = Vector3.zero;
+                _smoothing = false;
             }
             else if (t.fingerId == _activeFinger && t.phase == TouchPhase.Moved)
             {
@@ -181,18 +233,24 @@ namespace KoG.MiniMvp.Camera
             {
                 OrthoSize -= scroll * ScrollZoomSpeed;
                 _velocity = Vector3.zero;
+                _smoothing = false;
             }
 
-            if (IsOverUi(Input.mousePosition)) return;
+            // Middle-mouse or Alt+LMB also pans (editor simulator comfort).
+            var panBtn = Input.GetMouseButton(2) || (Input.GetMouseButton(0) && (Input.GetKey(KeyCode.LeftAlt) || Input.GetKey(KeyCode.RightAlt)));
+            var lmb = Input.GetMouseButton(0) && !Input.GetKey(KeyCode.LeftAlt) && !Input.GetKey(KeyCode.RightAlt);
 
-            if (Input.GetMouseButtonDown(0))
+            if (IsOverUi(Input.mousePosition) && !Input.GetMouseButton(2)) return;
+
+            if (Input.GetMouseButtonDown(0) || Input.GetMouseButtonDown(2))
             {
                 _lastPointer = Input.mousePosition;
                 _dragging = true;
-                _panArmed = false;
+                _panArmed = Input.GetMouseButtonDown(2);
                 _velocity = Vector3.zero;
+                _smoothing = false;
             }
-            else if (_dragging && Input.GetMouseButton(0))
+            else if (_dragging && (lmb || panBtn || Input.GetMouseButton(2)))
             {
                 Vector2 pos = Input.mousePosition;
                 var delta = pos - _lastPointer;
@@ -204,7 +262,7 @@ namespace KoG.MiniMvp.Camera
                     _lastPointer = pos;
                 }
             }
-            else if (_dragging && Input.GetMouseButtonUp(0))
+            else if (_dragging && !Input.GetMouseButton(0) && !Input.GetMouseButton(2))
             {
                 _dragging = false;
                 _panArmed = false;
@@ -223,12 +281,12 @@ namespace KoG.MiniMvp.Camera
             var move = (-right * screenDelta.x - forward * screenDelta.y) * PanSpeed * zoomFactor;
             _focus += move;
             _velocity = move / Mathf.Max(Time.deltaTime, 0.0001f);
-            ClampFocus();
         }
 
         void ApplyMomentum()
         {
             if (_dragging && _panArmed) return;
+            if (_smoothing) return;
             if (_velocity.sqrMagnitude < 0.0001f)
             {
                 _velocity = Vector3.zero;
@@ -237,7 +295,6 @@ namespace KoG.MiniMvp.Camera
 
             _focus += _velocity * Time.deltaTime;
             _velocity = Vector3.Lerp(_velocity, Vector3.zero, MomentumDamping * Time.deltaTime);
-            ClampFocus();
         }
 
         static bool IsOverUi(Vector2 screenPos) => screenPos.y < UiBottomGuardPx;

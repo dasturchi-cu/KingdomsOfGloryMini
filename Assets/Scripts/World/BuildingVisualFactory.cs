@@ -43,22 +43,30 @@ namespace KoG.MiniMvp.World
             var root = new GameObject("gold_mine_" + level);
             root.transform.position = worldPos;
 
+            // Ground shadow disc.
+            AddPrim(root.transform, PrimitiveType.Cylinder, "Shadow",
+                new Vector3(0f, 0.02f, 0f), new Vector3(1.35f, 0.02f, 1.35f), Mat("shadow", new Color(0.12f, 0.14f, 0.10f)));
             AddPrim(root.transform, PrimitiveType.Cube, "Pad",
-                new Vector3(0f, 0.08f, 0f), new Vector3(1.15f, 0.16f, 1.15f), MatStone());
+                new Vector3(0f, 0.08f, 0f), new Vector3(1.2f, 0.16f, 1.2f), MatStone());
             AddPrim(root.transform, PrimitiveType.Cube, "BeamL",
-                new Vector3(-0.38f, 0.55f, 0f), new Vector3(0.12f, 1.0f, 0.12f), MatWood());
+                new Vector3(-0.4f, 0.58f, 0f), new Vector3(0.13f, 1.05f, 0.13f), MatWood());
             AddPrim(root.transform, PrimitiveType.Cube, "BeamR",
-                new Vector3(0.38f, 0.55f, 0f), new Vector3(0.12f, 1.0f, 0.12f), MatWood());
+                new Vector3(0.4f, 0.58f, 0f), new Vector3(0.13f, 1.05f, 0.13f), MatWood());
             AddPrim(root.transform, PrimitiveType.Cube, "Cross",
-                new Vector3(0f, 1.05f, 0f), new Vector3(0.95f, 0.1f, 0.1f), MatWood());
+                new Vector3(0f, 1.12f, 0f), new Vector3(1.0f, 0.11f, 0.11f), MatWood());
+            AddPrim(root.transform, PrimitiveType.Cube, "Roof",
+                new Vector3(0f, 1.28f, 0f), new Vector3(0.55f, 0.12f, 0.55f), Mat("mineRoof", new Color(0.5f, 0.32f, 0.14f)));
             AddPrim(root.transform, PrimitiveType.Cube, "OreA",
-                new Vector3(0.05f, 0.28f, 0.22f), new Vector3(0.55f, 0.35f, 0.45f), MatGold());
+                new Vector3(0.08f, 0.3f, 0.25f), new Vector3(0.58f, 0.38f, 0.48f), MatGold());
             AddPrim(root.transform, PrimitiveType.Sphere, "OreB",
-                new Vector3(-0.2f, 0.32f, -0.15f), new Vector3(0.42f, 0.32f, 0.42f), MatGold());
+                new Vector3(-0.22f, 0.34f, -0.18f), new Vector3(0.45f, 0.34f, 0.45f), MatGold());
+            AddPrim(root.transform, PrimitiveType.Sphere, "OreC",
+                new Vector3(0.28f, 0.26f, -0.05f), new Vector3(0.28f, 0.22f, 0.28f), Mat("goldBright", new Color(1f, 0.88f, 0.35f)));
             AddPrim(root.transform, PrimitiveType.Cube, "Crate",
-                new Vector3(0.35f, 0.22f, -0.35f), new Vector3(0.28f, 0.28f, 0.28f), MatDark());
+                new Vector3(0.38f, 0.22f, -0.38f), new Vector3(0.3f, 0.28f, 0.3f), MatDark());
             AddPrim(root.transform, PrimitiveType.Cylinder, "Peg",
-                new Vector3(0f, 1.25f, 0f), new Vector3(0.12f, 0.08f, 0.12f), MatGold());
+                new Vector3(0f, 1.42f, 0f), new Vector3(0.14f, 0.08f, 0.14f), MatGold());
+            AddLevelPlate(root.transform, level, new Vector3(0f, 0.02f, -0.72f));
             return root;
         }
 
@@ -67,22 +75,49 @@ namespace KoG.MiniMvp.World
             var root = new GameObject("barracks_" + level);
             root.transform.position = worldPos;
 
+            AddPrim(root.transform, PrimitiveType.Cylinder, "Shadow",
+                new Vector3(0f, 0.02f, 0f), new Vector3(1.5f, 0.02f, 1.3f), Mat("shadow", new Color(0.12f, 0.14f, 0.10f)));
             AddPrim(root.transform, PrimitiveType.Cube, "Base",
-                new Vector3(0f, 0.1f, 0f), new Vector3(1.35f, 0.2f, 1.15f), MatStone());
+                new Vector3(0f, 0.1f, 0f), new Vector3(1.4f, 0.2f, 1.2f), MatStone());
             AddPrim(root.transform, PrimitiveType.Cube, "Walls",
-                new Vector3(0f, 0.55f, 0f), new Vector3(1.2f, 0.7f, 0.95f), MatCanvas());
+                new Vector3(0f, 0.58f, 0f), new Vector3(1.25f, 0.75f, 1.0f), MatCanvas());
             AddPrim(root.transform, PrimitiveType.Cube, "Roof",
-                new Vector3(0f, 1.05f, 0f), new Vector3(1.35f, 0.22f, 1.1f), MatRoof());
+                new Vector3(0f, 1.1f, 0f), new Vector3(1.4f, 0.24f, 1.15f), MatRoof());
             AddPrim(root.transform, PrimitiveType.Cube, "Ridge",
-                new Vector3(0f, 1.22f, 0f), new Vector3(0.2f, 0.18f, 1.05f), MatRoof());
+                new Vector3(0f, 1.28f, 0f), new Vector3(0.22f, 0.2f, 1.1f), MatRoof());
             AddPrim(root.transform, PrimitiveType.Cube, "Door",
-                new Vector3(0f, 0.42f, 0.48f), new Vector3(0.32f, 0.5f, 0.06f), MatDark());
+                new Vector3(0f, 0.45f, 0.52f), new Vector3(0.34f, 0.55f, 0.07f), MatDark());
+            AddPrim(root.transform, PrimitiveType.Cube, "WindowL",
+                new Vector3(-0.38f, 0.62f, 0.51f), new Vector3(0.18f, 0.18f, 0.05f), Mat("window", new Color(0.35f, 0.55f, 0.75f)));
+            AddPrim(root.transform, PrimitiveType.Cube, "WindowR",
+                new Vector3(0.38f, 0.62f, 0.51f), new Vector3(0.18f, 0.18f, 0.05f), Mat("window", new Color(0.35f, 0.55f, 0.75f)));
             AddPrim(root.transform, PrimitiveType.Cylinder, "Pole",
-                new Vector3(0.55f, 0.85f, 0.4f), new Vector3(0.06f, 0.7f, 0.06f), MatWood());
+                new Vector3(0.58f, 0.9f, 0.42f), new Vector3(0.07f, 0.75f, 0.07f), MatWood());
             AddPrim(root.transform, PrimitiveType.Cube, "Banner",
-                new Vector3(0.55f, 1.15f, 0.52f), new Vector3(0.28f, 0.22f, 0.04f),
-                Mat("banner", new Color(0.75f, 0.12f, 0.12f)));
+                new Vector3(0.58f, 1.22f, 0.55f), new Vector3(0.3f, 0.26f, 0.04f),
+                Mat("banner", new Color(0.78f, 0.12f, 0.12f)));
+            AddLevelPlate(root.transform, level, new Vector3(0f, 0.02f, -0.78f));
             return root;
+        }
+
+        static void AddLevelPlate(Transform parent, int level, Vector3 localPos)
+        {
+            AddPrim(parent, PrimitiveType.Cube, "LvlPlate",
+                localPos + Vector3.up * 0.08f, new Vector3(0.55f, 0.12f, 0.22f),
+                Mat("lvlPlate", new Color(0.15f, 0.16f, 0.2f)));
+            var badge = new GameObject("LvlText");
+            badge.transform.SetParent(parent, false);
+            badge.transform.localPosition = localPos + new Vector3(0f, 0.22f, 0f);
+            var tm = badge.AddComponent<TextMesh>();
+            tm.text = "L" + Mathf.Max(level, 1);
+            tm.fontSize = 64;
+            tm.characterSize = 0.035f;
+            tm.anchor = TextAnchor.MiddleCenter;
+            tm.alignment = TextAlignment.Center;
+            tm.color = new Color(1f, 0.9f, 0.4f);
+            tm.fontStyle = FontStyle.Bold;
+            // Match CoC cam so L# reads in Game view.
+            badge.transform.rotation = Quaternion.Euler(55f, 45f, 0f);
         }
 
         static Material MatStone() => Mat("stone", new Color(0.62f, 0.60f, 0.56f));

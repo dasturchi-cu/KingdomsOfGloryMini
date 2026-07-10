@@ -7,16 +7,17 @@ using UnityEngine.UI;
 namespace KoG.MiniMvp.UI
 {
     /// <summary>
-    /// Runtime Screen-Space Overlay HUD for the Mini-MVP game loop.
-    /// Built in code so SampleScene needs no prefab wiring.
+    /// CoC-style runtime HUD tuned for Unity Simulator / Game view.
     /// </summary>
     public sealed class MiniMvpHud : MonoBehaviour
     {
-        public const float BottomBarHeight = 168f;
+        public const float BottomBarHeight = 178f;
 
         Text _title;
         Text _status;
-        Text _resources;
+        Text _goldChip;
+        Text _troopChip;
+        Text _selectedChip;
         GameObject _authRoot;
         GameObject _gameRoot;
         GameObject _resultRoot;
@@ -70,8 +71,14 @@ namespace KoG.MiniMvp.UI
 
         public void SetResources(long gold, int barbarians)
         {
-            if (_resources != null)
-                _resources.text = "Gold: " + gold + "   |   Barbarian: " + barbarians;
+            if (_goldChip != null) _goldChip.text = "●  " + FormatNum(gold);
+            if (_troopChip != null) _troopChip.text = "⚔  " + barbarians;
+        }
+
+        public void SetSelected(string label)
+        {
+            if (_selectedChip == null) return;
+            _selectedChip.text = string.IsNullOrEmpty(label) ? "Tanlangan: —" : "Tanlangan: " + label;
         }
 
         public void SetAuthFields(string username, string displayName, string email, string password)
@@ -102,6 +109,13 @@ namespace KoG.MiniMvp.UI
             if (_resultBody != null) _resultBody.text = message ?? "";
         }
 
+        static string FormatNum(long n)
+        {
+            if (n >= 1_000_000) return (n / 1_000_000f).ToString("0.#") + "M";
+            if (n >= 10_000) return (n / 1000f).ToString("0.#") + "K";
+            return n.ToString();
+        }
+
         static void EnsureEventSystem()
         {
             if (FindFirstObjectByType<EventSystem>() != null) return;
@@ -120,7 +134,7 @@ namespace KoG.MiniMvp.UI
             var scaler = canvasGo.AddComponent<CanvasScaler>();
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
             scaler.referenceResolution = new Vector2(1080, 1920);
-            scaler.matchWidthOrHeight = 0.5f;
+            scaler.matchWidthOrHeight = 0.55f;
             canvasGo.AddComponent<GraphicRaycaster>();
 
             var safeGo = new GameObject("SafeArea", typeof(RectTransform));
@@ -133,86 +147,132 @@ namespace KoG.MiniMvp.UI
             safeGo.AddComponent<SafeAreaPad>();
             var root = safeGo.transform;
 
-            // Top status strip.
+            // Top resource strip (CoC-like).
             var top = Panel(root, "TopBar",
                 new Vector2(0.5f, 1f), new Vector2(0.5f, 1f),
-                new Vector2(0f, -8f), new Vector2(1040f, 120f),
-                new Color(0f, 0f, 0f, 0.55f));
-            _title = Label(top.transform, "Title", "Kingdoms of Glory — Mini MVP", 28, TextAnchor.UpperLeft,
-                new Vector2(16f, -10f), new Vector2(1000f, 36f));
-            _status = Label(top.transform, "Status", "Ready", 20, TextAnchor.UpperLeft,
-                new Vector2(16f, -48f), new Vector2(1000f, 56f), new Color(1f, 0.95f, 0.6f));
+                new Vector2(0f, -10f), new Vector2(1040f, 132f),
+                new Color(0.04f, 0.05f, 0.08f, 0.72f));
+
+            _title = Label(top.transform, "Title", "Kingdoms of Glory", 26, TextAnchor.UpperLeft,
+                new Vector2(18f, -10f), new Vector2(520f, 34f), new Color(1f, 0.92f, 0.55f));
+
+            var goldPanel = Panel(top.transform, "GoldChip",
+                new Vector2(1f, 1f), new Vector2(1f, 1f),
+                new Vector2(-210f, -18f), new Vector2(190f, 44f),
+                new Color(0.35f, 0.22f, 0.05f, 0.92f));
+            goldPanel.anchorMin = new Vector2(1f, 1f);
+            goldPanel.anchorMax = new Vector2(1f, 1f);
+            goldPanel.pivot = new Vector2(1f, 1f);
+            _goldChip = Label(goldPanel, "GoldTxt", "●  0", 22, TextAnchor.MiddleCenter,
+                new Vector2(8f, -6f), new Vector2(174f, 32f), new Color(1f, 0.86f, 0.25f));
+            CenterLabel(_goldChip);
+
+            var troopPanel = Panel(top.transform, "TroopChip",
+                new Vector2(1f, 1f), new Vector2(1f, 1f),
+                new Vector2(-18f, -18f), new Vector2(170f, 44f),
+                new Color(0.12f, 0.18f, 0.32f, 0.92f));
+            troopPanel.anchorMin = new Vector2(1f, 1f);
+            troopPanel.anchorMax = new Vector2(1f, 1f);
+            troopPanel.pivot = new Vector2(1f, 1f);
+            _troopChip = Label(troopPanel, "TroopTxt", "⚔  0", 22, TextAnchor.MiddleCenter,
+                new Vector2(8f, -6f), new Vector2(154f, 32f), new Color(0.75f, 0.88f, 1f));
+            CenterLabel(_troopChip);
+
+            _status = Label(top.transform, "Status", "Simulator — Guest bilan boshlang", 18, TextAnchor.UpperLeft,
+                new Vector2(18f, -48f), new Vector2(1000f, 36f), new Color(0.95f, 0.93f, 0.78f));
+            _selectedChip = Label(top.transform, "Selected", "Tanlangan: —", 17, TextAnchor.UpperLeft,
+                new Vector2(18f, -86f), new Vector2(700f, 28f), new Color(0.7f, 0.85f, 1f));
 
             BuildAuthPanel(root);
 
-            // Bottom game actions.
             _gameRoot = Panel(root, "GameBar",
                 new Vector2(0.5f, 0f), new Vector2(0.5f, 0f),
                 new Vector2(0f, BottomBarHeight * 0.5f), new Vector2(1060f, BottomBarHeight),
-                new Color(0.05f, 0.05f, 0.08f, 0.88f)).gameObject;
+                new Color(0.03f, 0.04f, 0.07f, 0.92f)).gameObject;
 
-            _resources = Label(_gameRoot.transform, "Resources", "Gold: 0   |   Barbarian: 0", 22, TextAnchor.MiddleLeft,
-                new Vector2(16f, 58f), new Vector2(700f, 32f), Color.white);
-
-            var row1Y = -8f;
-            var row2Y = -62f;
-            var x = -500f;
-            const float bw = 140f;
+            var row1Y = 18f;
+            var row2Y = -40f;
+            var x = -510f;
+            const float bw = 148f;
             const float gap = 10f;
-            MakeBtn(_gameRoot.transform, "Mine", "1 Mine", ref x, row1Y, bw, gap, () => Safe(OnPlaceMine));
-            MakeBtn(_gameRoot.transform, "Barracks", "2 Barracks", ref x, row1Y, bw, gap, () => Safe(OnPlaceBarracks));
-            MakeBtn(_gameRoot.transform, "Collect", "3 Collect", ref x, row1Y, bw, gap, () => Safe(OnCollect));
-            MakeBtn(_gameRoot.transform, "Train", "4 Train x10", ref x, row1Y, bw, gap, () => Safe(OnTrain));
-            MakeBtn(_gameRoot.transform, "Upgrade", "5 Upgrade", ref x, row1Y, bw, gap, () => Safe(OnUpgrade));
+            MakeBtn(_gameRoot.transform, "Mine", "Mine", ref x, row1Y, bw, gap,
+                new Color(0.55f, 0.42f, 0.12f), () => Safe(OnPlaceMine));
+            MakeBtn(_gameRoot.transform, "Barracks", "Barracks", ref x, row1Y, bw, gap,
+                new Color(0.22f, 0.38f, 0.62f), () => Safe(OnPlaceBarracks));
+            MakeBtn(_gameRoot.transform, "Collect", "Collect", ref x, row1Y, bw, gap,
+                new Color(0.62f, 0.48f, 0.10f), () => Safe(OnCollect));
+            MakeBtn(_gameRoot.transform, "Train", "Train ×10", ref x, row1Y, bw, gap,
+                new Color(0.28f, 0.48f, 0.28f), () => Safe(OnTrain));
+            MakeBtn(_gameRoot.transform, "Upgrade", "Upgrade", ref x, row1Y, bw, gap,
+                new Color(0.42f, 0.28f, 0.55f), () => Safe(OnUpgrade));
 
-            x = -500f;
-            MakeBtn(_gameRoot.transform, "Raid", "6 Start Raid", ref x, row2Y, bw, gap, () => Safe(OnStartRaid));
-            MakeBtn(_gameRoot.transform, "Complete", "7 Complete", ref x, row2Y, bw + 20f, gap, () => Safe(OnCompleteRaid));
-            MakeBtn(_gameRoot.transform, "Logout", "Logout", ref x, row2Y, bw, gap, () => Safe(OnLogout));
+            x = -510f;
+            MakeBtn(_gameRoot.transform, "Raid", "Start Raid", ref x, row2Y, bw + 10f, gap,
+                new Color(0.62f, 0.22f, 0.18f), () => Safe(OnStartRaid));
+            MakeBtn(_gameRoot.transform, "Complete", "Complete", ref x, row2Y, bw + 10f, gap,
+                new Color(0.55f, 0.28f, 0.18f), () => Safe(OnCompleteRaid));
+            MakeBtn(_gameRoot.transform, "Logout", "Logout", ref x, row2Y, bw, gap,
+                new Color(0.25f, 0.26f, 0.30f), () => Safe(OnLogout));
 
-            Label(_gameRoot.transform, "Hint", "Tartib: 1→2→3→4→6, 30s kut, keyin 7. Binoni bosib Upgrade.",
-                16, TextAnchor.LowerLeft, new Vector2(16f, -BottomBarHeight * 0.5f + 14f), new Vector2(1000f, 24f),
-                new Color(0.85f, 0.85f, 0.9f));
+            Label(_gameRoot.transform, "Hint",
+                "Simulator: drag / scroll / pinch · bino bos → Upgrade · 1→2→3→4→Raid",
+                15, TextAnchor.LowerLeft, new Vector2(18f, -BottomBarHeight * 0.5f + 16f), new Vector2(1020f, 24f),
+                new Color(0.72f, 0.76f, 0.82f));
 
-            // Result overlay.
             _resultRoot = Panel(root, "ResultPanel",
                 new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
                 Vector2.zero, new Vector2(720f, 360f),
-                new Color(0.08f, 0.08f, 0.12f, 0.94f)).gameObject;
+                new Color(0.06f, 0.07f, 0.11f, 0.96f)).gameObject;
             _resultBody = Label(_resultRoot.transform, "Body", "", 22, TextAnchor.UpperLeft,
                 new Vector2(24f, -24f), new Vector2(670f, 240f), new Color(1f, 0.95f, 0.7f));
             var okX = -100f;
-            MakeBtn(_resultRoot.transform, "Ok", "OK — back to base", ref okX, -140f, 280f, 0f, () => Safe(OnResultOk));
+            MakeBtn(_resultRoot.transform, "Ok", "OK — bazaga", ref okX, -140f, 280f, 0f,
+                new Color(0.28f, 0.48f, 0.28f), () => Safe(OnResultOk));
         }
 
         void BuildAuthPanel(Transform canvas)
         {
             _authRoot = Panel(canvas, "AuthPanel",
                 new Vector2(0.5f, 0f), new Vector2(0.5f, 0f),
-                new Vector2(0f, 210f), new Vector2(720f, 380f),
-                new Color(0.06f, 0.07f, 0.10f, 0.92f)).gameObject;
+                new Vector2(0f, 220f), new Vector2(740f, 400f),
+                new Color(0.05f, 0.06f, 0.09f, 0.94f)).gameObject;
 
-            Label(_authRoot.transform, "AuthTitle", "Kirish / Ro'yxat", 24, TextAnchor.UpperLeft,
-                new Vector2(24f, -16f), new Vector2(660f, 32f));
+            Label(_authRoot.transform, "AuthTitle", "Simulator kirish", 26, TextAnchor.UpperLeft,
+                new Vector2(28f, -18f), new Vector2(680f, 34f), new Color(1f, 0.9f, 0.55f));
 
-            _userField = Field(_authRoot.transform, "Username", "player1", new Vector2(24f, -60f), false);
-            _displayField = Field(_authRoot.transform, "Display", "Player One", new Vector2(24f, -110f), false);
-            _emailField = Field(_authRoot.transform, "Email", "player1@test.com", new Vector2(24f, -160f), false);
-            _passwordField = Field(_authRoot.transform, "Password", "TestPass123!@#", new Vector2(24f, -210f), true);
+            _userField = Field(_authRoot.transform, "Username", "player1", new Vector2(28f, -70f), false);
+            _displayField = Field(_authRoot.transform, "Display", "Player One", new Vector2(28f, -120f), false);
+            _emailField = Field(_authRoot.transform, "Email", "player1@test.com", new Vector2(28f, -170f), false);
+            _passwordField = Field(_authRoot.transform, "Password", "TestPass123!@#", new Vector2(28f, -220f), true);
 
-            var x = -320f;
-            MakeBtn(_authRoot.transform, "Register", "Register", ref x, -150f, 160f, 12f, () => Safe(OnRegister));
-            MakeBtn(_authRoot.transform, "Login", "Login", ref x, -150f, 140f, 12f, () => Safe(OnLogin));
-            MakeBtn(_authRoot.transform, "Guest", "Guest", ref x, -150f, 140f, 12f, () => Safe(OnGuest));
+            var x = -330f;
+            MakeBtn(_authRoot.transform, "Guest", "▶  Guest Play", ref x, -155f, 200f, 14f,
+                new Color(0.18f, 0.52f, 0.32f), () => Safe(OnGuest));
+            MakeBtn(_authRoot.transform, "Login", "Login", ref x, -155f, 140f, 14f,
+                new Color(0.22f, 0.35f, 0.55f), () => Safe(OnLogin));
+            MakeBtn(_authRoot.transform, "Register", "Register", ref x, -155f, 150f, 14f,
+                new Color(0.35f, 0.28f, 0.48f), () => Safe(OnRegister));
 
-            Label(_authRoot.transform, "AuthHint", "Guest = yangi test akkaunt. Google/Apple keyinroq.",
-                16, TextAnchor.LowerLeft, new Vector2(24f, -360f), new Vector2(660f, 28f),
-                new Color(0.8f, 0.82f, 0.88f));
+            Label(_authRoot.transform, "AuthHint",
+                "Guest = tez test. Drag maydon, scroll zoom. Release emas — faqat simulator.",
+                15, TextAnchor.LowerLeft, new Vector2(28f, -380f), new Vector2(680f, 28f),
+                new Color(0.75f, 0.78f, 0.85f));
+        }
+
+        static void CenterLabel(Text t)
+        {
+            var rt = t.rectTransform;
+            rt.anchorMin = Vector2.zero;
+            rt.anchorMax = Vector2.one;
+            rt.offsetMin = new Vector2(6f, 4f);
+            rt.offsetMax = new Vector2(-6f, -4f);
+            t.alignment = TextAnchor.MiddleCenter;
         }
 
         static InputField Field(Transform parent, string label, string value, Vector2 pos, bool password)
         {
-            Label(parent, label + "Lbl", label, 16, TextAnchor.UpperLeft, pos, new Vector2(120f, 28f));
+            Label(parent, label + "Lbl", label, 16, TextAnchor.UpperLeft, pos, new Vector2(120f, 28f),
+                new Color(0.8f, 0.82f, 0.88f));
             var go = new GameObject(label, typeof(RectTransform), typeof(Image), typeof(InputField));
             go.transform.SetParent(parent, false);
             var rt = go.GetComponent<RectTransform>();
@@ -220,8 +280,8 @@ namespace KoG.MiniMvp.UI
             rt.anchorMax = new Vector2(0f, 1f);
             rt.pivot = new Vector2(0f, 1f);
             rt.anchoredPosition = new Vector2(pos.x + 130f, pos.y);
-            rt.sizeDelta = new Vector2(480f, 36f);
-            go.GetComponent<Image>().color = new Color(0.15f, 0.16f, 0.20f, 1f);
+            rt.sizeDelta = new Vector2(500f, 38f);
+            go.GetComponent<Image>().color = new Color(0.12f, 0.14f, 0.18f, 1f);
 
             var textGo = new GameObject("Text", typeof(RectTransform), typeof(Text));
             textGo.transform.SetParent(go.transform, false);
@@ -307,7 +367,8 @@ namespace KoG.MiniMvp.UI
             return t;
         }
 
-        static void MakeBtn(Transform parent, string name, string label, ref float x, float y, float width, float gap, Action onClick)
+        static void MakeBtn(Transform parent, string name, string label, ref float x, float y, float width, float gap,
+            Color color, Action onClick)
         {
             var go = new GameObject(name, typeof(RectTransform), typeof(Image), typeof(Button));
             go.transform.SetParent(parent, false);
@@ -316,9 +377,14 @@ namespace KoG.MiniMvp.UI
             rt.anchorMax = new Vector2(0.5f, 0.5f);
             rt.pivot = new Vector2(0.5f, 0.5f);
             rt.anchoredPosition = new Vector2(x + width * 0.5f, y);
-            rt.sizeDelta = new Vector2(width, 44f);
-            go.GetComponent<Image>().color = new Color(0.22f, 0.28f, 0.40f, 1f);
+            rt.sizeDelta = new Vector2(width, 48f);
+            go.GetComponent<Image>().color = color;
             var btn = go.GetComponent<Button>();
+            var colors = btn.colors;
+            colors.highlightedColor = Color.Lerp(color, Color.white, 0.22f);
+            colors.pressedColor = Color.Lerp(color, Color.black, 0.25f);
+            colors.disabledColor = new Color(0.2f, 0.2f, 0.22f, 0.7f);
+            btn.colors = colors;
             btn.onClick.AddListener(() => onClick?.Invoke());
 
             var labelGo = new GameObject("Label", typeof(RectTransform), typeof(Text));
@@ -331,7 +397,8 @@ namespace KoG.MiniMvp.UI
             var t = labelGo.GetComponent<Text>();
             t.font = BuiltinFont();
             t.text = label;
-            t.fontSize = 16;
+            t.fontSize = 17;
+            t.fontStyle = FontStyle.Bold;
             t.alignment = TextAnchor.MiddleCenter;
             t.color = Color.white;
 

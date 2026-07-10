@@ -180,7 +180,7 @@ namespace KoG.MiniMvp.World
 
             var half = fieldWorldSize * 0.5f;
             var radius = half + 1.55f;
-            const int slots = 18;
+            const int slots = 26; // denser ring for Game/Simulator view
 
             for (var i = 0; i < slots; i++)
             {
