@@ -163,6 +163,7 @@ namespace KoG.MiniMvp.World
     {
         Renderer[] _detail;
         bool _visible = true;
+        float _nextCheck;
 
         public void Collect()
         {
@@ -170,7 +171,8 @@ namespace KoG.MiniMvp.World
             foreach (var r in GetComponentsInChildren<Renderer>(true))
             {
                 var n = r.gameObject.name.ToLowerInvariant();
-                if (n.Contains("flower") || n == "grass" || n.Contains("grass"))
+                // Only flower detail — keep Grass mesh (outer floor) always on.
+                if (n.Contains("flower"))
                     list.Add(r);
             }
             _detail = list.ToArray();
@@ -179,9 +181,11 @@ namespace KoG.MiniMvp.World
         void LateUpdate()
         {
             if (_detail == null || _detail.Length == 0) return;
+            if (Time.unscaledTime < _nextCheck) return;
+            _nextCheck = Time.unscaledTime + 0.25f;
+
             var cam = UnityEngine.Camera.main;
             if (cam == null || !cam.orthographic) return;
-            // Zoomed out → hide tiny detail (reference still reads via trees/rocks).
             var want = cam.orthographicSize < 13.5f;
             if (want == _visible) return;
             _visible = want;

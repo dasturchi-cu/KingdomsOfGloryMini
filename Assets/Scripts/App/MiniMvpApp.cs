@@ -242,6 +242,8 @@ namespace KoG.MiniMvp.App
             _cocCamera.FocusBase(FieldCenter, FieldWorldSize * 0.55f);
             BaseLightingSetup.Apply(FieldCenter);
             FieldVisualBuilder.FinalizeHierarchy();
+            var village = GameObject.Find("Village");
+            MobileVillageOptimize.Apply(village != null ? village.transform : null, cam);
         }
 
 

@@ -67,6 +67,7 @@ namespace KoG.MiniMvp.Lighting
             QualitySettings.softParticles = false;
             QualitySettings.realtimeReflectionProbes = false;
             QualitySettings.billboardsFaceCameraPosition = true;
+            QualitySettings.pixelLightCount = 1;
         }
 
         static Light EnsureSun()

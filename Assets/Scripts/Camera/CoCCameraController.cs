@@ -19,7 +19,8 @@ namespace KoG.MiniMvp.Camera
         const float MinOrtho = 8f;
         const float MaxOrtho = 18f;
         const float UiBottomGuardPx = 190f;
-        const float SoftClampStrength = 10f;
+        const float SoftClampStrength = 8f;
+        const float EdgeRubber = 2.8f; // soft overshoot before hard stop (CoC bounce)
         const float FocusLerp = 7.5f;
 
         UnityEngine.Camera _cam;
@@ -144,8 +145,8 @@ namespace KoG.MiniMvp.Camera
             else if (_focus.z > maxZ) _focus.z = Mathf.Lerp(_focus.z, maxZ, SoftClampStrength * Time.deltaTime);
             _focus.y = 0f;
 
-            // Hard safety if dragged far.
-            var hardLim = lim + 3.5f;
+            // Hard safety if dragged far — short rubber band then stop.
+            var hardLim = lim + EdgeRubber;
             _focus.x = Mathf.Clamp(_focus.x, _fieldCenter.x - hardLim, _fieldCenter.x + hardLim);
             _focus.z = Mathf.Clamp(_focus.z, _fieldCenter.z - hardLim, _fieldCenter.z + hardLim);
         }

@@ -52,6 +52,7 @@ namespace KoG.MiniMvp.World
         void Show(Vector3 worldPos, float radius)
         {
             if (_ring == null) BuildRing();
+            enabled = true;
             _radius = Mathf.Max(radius, 0.5f);
             _ring.gameObject.SetActive(true);
             _ring.position = worldPos;
@@ -62,6 +63,7 @@ namespace KoG.MiniMvp.World
         void Hide()
         {
             if (_ring != null) _ring.gameObject.SetActive(false);
+            enabled = false; // no Update cost when idle
         }
 
         void Update()
