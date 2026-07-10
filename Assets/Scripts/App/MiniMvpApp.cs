@@ -11,7 +11,7 @@ using UnityEngine;
 namespace KoG.MiniMvp.App
 {
     /// <summary>
-    /// Self-bootstrapping Mini-MVP client. Game/Result use uGUI; Auth still OnGUI (Phase 7).
+    /// Self-bootstrapping Mini-MVP client. Auth/Game/Result use runtime uGUI (MiniMvpHud).
     /// </summary>
     public sealed class MiniMvpApp : MonoBehaviour
     {
@@ -113,7 +113,28 @@ namespace KoG.MiniMvp.App
                 SetScreen(UiScreen.Game);
                 StartCoroutine(LoadPlayerState());
             };
+            _hud.OnRegister = () =>
+            {
+                PullAuthFields();
+                StartCoroutine(Register());
+            };
+            _hud.OnLogin = () =>
+            {
+                PullAuthFields();
+                StartCoroutine(Login());
+            };
+            _hud.OnGuest = () => StartCoroutine(GuestLogin());
+            _hud.SetAuthFields(_username, _displayName, _email, _password);
             RefreshHud();
+        }
+
+        void PullAuthFields()
+        {
+            if (_hud == null) return;
+            _username = _hud.Username;
+            _displayName = _hud.DisplayName;
+            _email = _hud.Email;
+            _password = _hud.Password;
         }
 
         void SetScreen(UiScreen screen)
@@ -121,6 +142,7 @@ namespace KoG.MiniMvp.App
             _screen = screen;
             EnsureHud();
             if (_hud == null) return;
+            _hud.ShowAuth(screen == UiScreen.Auth);
             _hud.ShowGame(screen == UiScreen.Game);
             _hud.ShowResult(screen == UiScreen.Result);
             RefreshHud();
@@ -701,95 +723,19 @@ namespace KoG.MiniMvp.App
 
         void OnGUI()
         {
-            EnsureStyles();
-            var pad = 12f;
-            var w = UnityEngine.Screen.width;
-            var h = UnityEngine.Screen.height;
-
-            // Auth still uses OnGUI (Phase 7 moves it to uGUI). Game/Result use MiniMvpHud.
-            if (_screen == UiScreen.Auth)
-            {
-                GUI.Box(new Rect(0, h - 210, w, 210), GUIContent.none);
-                GUI.Label(new Rect(pad, 8, w - pad * 2, 32), "Kingdoms of Glory — Mini MVP", _titleStyle);
-                GUI.Label(new Rect(pad, 40, w - pad * 2, 50), _status, _statusStyle);
-                DrawAuth(pad, w, h);
-            }
+            // Auth + Game + Result all use MiniMvpHud (uGUI). OnGUI kept empty for hot-reload safety.
         }
 
-        void DrawAuth(float pad, float w, float h)
+        IEnumerator GuestLogin()
         {
-            var y = h - 190;
-            GUI.Label(new Rect(pad, y, 120, 24), "Username");
-            _username = GUI.TextField(new Rect(pad + 120, y, 220, 24), _username);
-            y += 30;
-            GUI.Label(new Rect(pad, y, 120, 24), "Display");
-            _displayName = GUI.TextField(new Rect(pad + 120, y, 220, 24), _displayName);
-            y += 30;
-            GUI.Label(new Rect(pad, y, 120, 24), "Email");
-            _email = GUI.TextField(new Rect(pad + 120, y, 220, 24), _email);
-            y += 30;
-            GUI.Label(new Rect(pad, y, 120, 24), "Password");
-            _password = GUI.PasswordField(new Rect(pad + 120, y, 220, 24), _password, '*');
-            y += 36;
-
-            GUI.enabled = !_busy;
-            if (GUI.Button(new Rect(pad, y, 160, 40), "1) Register", _btnStyle))
-                StartCoroutine(Register());
-            if (GUI.Button(new Rect(pad + 180, y, 160, 40), "Login", _btnStyle))
-                StartCoroutine(Login());
-            GUI.enabled = true;
-
-            GUI.Label(new Rect(pad + 360, y, 400, 40), "Muhim: Game tabni bosing (Scene emas)");
-        }
-
-        void DrawGame(float pad, float w, float h)
-        {
-            GUI.Label(new Rect(pad, 90, 400, 24), "Gold: " + _gold + "   |   Barbarian: " + _barbarianCount);
-
-            var y = h - 150;
-            var bw = 150f;
-            var gap = 8f;
-            var x = pad;
-
-            GUI.enabled = !_busy;
-            if (Btn(ref x, y, bw, gap, "1 Place Mine")) StartCoroutine(PlaceBuilding("gold_mine"));
-            if (Btn(ref x, y, bw, gap, "2 Barracks")) StartCoroutine(PlaceBuilding("barracks"));
-            if (Btn(ref x, y, bw, gap, "3 Collect")) StartCoroutine(CollectGold());
-            if (Btn(ref x, y, bw, gap, "4 Train x10")) StartCoroutine(TrainTroops(10));
-            if (Btn(ref x, y, bw, gap, "5 Upgrade")) StartCoroutine(UpgradeSelected());
-
-            y += 50;
-            x = pad;
-            if (Btn(ref x, y, bw, gap, "6 Start Raid")) StartCoroutine(StartRaid());
-            if (Btn(ref x, y, bw + 20, gap, "7 Complete Raid")) StartCoroutine(CompleteRaid());
-            if (Btn(ref x, y, bw, gap, "Logout"))
-            {
-                SessionStore.Clear();
-                ClearBuildings();
-                SetScreen(UiScreen.Auth);
-                SetStatus("Logged out");
-            }
-            GUI.enabled = true;
-
-            GUI.Label(new Rect(pad, h - 40, w - pad * 2, 30),
-                "Tartib: 1→2→3→4→6, 30 soniya kut, keyin 7. Kub ustiga bosib Upgrade tanlang.");
-        }
-
-        void DrawResult(float pad, float w, float h)
-        {
-            GUI.Label(new Rect(pad, 90, w - pad * 2, 120), _resultMessage, _statusStyle);
-            if (GUI.Button(new Rect(pad, h - 80, 200, 44), "OK — back to base", _btnStyle))
-            {
-                SetScreen(UiScreen.Game);
-                StartCoroutine(LoadPlayerState());
-            }
-        }
-
-        bool Btn(ref float x, float y, float bw, float gap, string label)
-        {
-            var clicked = GUI.Button(new Rect(x, y, bw, 40), label, _btnStyle);
-            x += bw + gap;
-            return clicked;
+            var id = Guid.NewGuid().ToString("N").Substring(0, 8);
+            _username = "guest_" + id;
+            _displayName = "Guest";
+            _email = _username + "@guest.local";
+            _password = "GuestPass123!@#";
+            if (_hud != null) _hud.SetAuthFields(_username, _displayName, _email, _password);
+            SetStatus("Guest akkaunt yaratilmoqda...");
+            yield return Register();
         }
 
         IEnumerator Register()
@@ -1558,7 +1504,7 @@ namespace KoG.MiniMvp.App
         {
             _status = message;
             Debug.Log("[MiniMvp] " + message);
-            if (_hud != null) _hud.SetStatus(_status);
+            RefreshHud();
         }
 
         void SetBusy(bool busy)
