@@ -1102,7 +1102,6 @@ namespace KoG.MiniMvp.App
                         Debug.LogWarning("[MiniMvp] Castle mesh missing after load — greybox fallback");
                         Destroy(go);
                         go = CreateGreyboxCube(type, level, gridX, gridZ);
-                        go.GetComponent<Renderer>().sharedMaterial.color = new Color(0.55f, 0.55f, 0.6f);
                     }
                     else
                     {
@@ -1114,12 +1113,11 @@ namespace KoG.MiniMvp.App
                 {
                     Debug.LogWarning("[MiniMvp] Buildings/Castle missing — greybox");
                     go = CreateGreyboxCube(type, level, gridX, gridZ);
-                    go.GetComponent<Renderer>().sharedMaterial.color = new Color(0.55f, 0.55f, 0.6f);
                 }
             }
             else
             {
-                go = CreateGreyboxCube(type, level, gridX, gridZ);
+                go = CreateStylizedBuilding(type, level, gridX, gridZ);
             }
 
             var marker = go.GetComponent<BuildingMarker>();
@@ -1129,6 +1127,8 @@ namespace KoG.MiniMvp.App
             marker.level = level;
             marker.gridX = gridX;
             marker.gridZ = gridZ;
+
+            EnsureClickCollider(go);
 
             var click = go.GetComponent<BuildingClickRelay>();
             if (click == null) click = go.AddComponent<BuildingClickRelay>();
@@ -1326,31 +1326,121 @@ namespace KoG.MiniMvp.App
                 _cocCamera.FocusBase(focus, FieldWorldSize * 0.78f);
         }
 
-        static readonly Dictionary<string, Material> _greyboxMats = new Dictionary<string, Material>();
+        static readonly Dictionary<string, Material> _buildingMats = new Dictionary<string, Material>();
 
-        static Material GetGreyboxMaterial(string type)
+        static Material GetBuildingMat(string key, Color color)
         {
-            if (_greyboxMats.TryGetValue(type, out var existing) && existing != null)
+            if (_buildingMats.TryGetValue(key, out var existing) && existing != null)
                 return existing;
 
             var shader = Shader.Find("Universal Render Pipeline/Lit");
             if (shader == null) shader = Shader.Find("Universal Render Pipeline/Simple Lit");
             if (shader == null) shader = Shader.Find("Standard");
 
-            var color = type switch
-            {
-                "castle" => new Color(0.75f, 0.6f, 0.2f),
-                "gold_mine" => new Color(0.95f, 0.8f, 0.2f),
-                "barracks" => new Color(0.4f, 0.55f, 0.9f),
-                _ => Color.gray
-            };
-
             var mat = new Material(shader);
             if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", color);
             if (mat.HasProperty("_Color")) mat.SetColor("_Color", color);
             mat.enableInstancing = true;
-            _greyboxMats[type] = mat;
+            _buildingMats[key] = mat;
             return mat;
+        }
+
+        static Material MatStone() => GetBuildingMat("stone", new Color(0.62f, 0.60f, 0.56f));
+        static Material MatWood() => GetBuildingMat("wood", new Color(0.45f, 0.30f, 0.16f));
+        static Material MatGold() => GetBuildingMat("gold", new Color(0.95f, 0.78f, 0.18f));
+        static Material MatRoof() => GetBuildingMat("roof", new Color(0.18f, 0.38f, 0.72f));
+        static Material MatCanvas() => GetBuildingMat("canvas", new Color(0.78f, 0.72f, 0.58f));
+        static Material MatDark() => GetBuildingMat("dark", new Color(0.28f, 0.26f, 0.24f));
+
+        /// <summary>
+        /// CoC-style low-poly stand-ins for mine/barracks until final art ships.
+        /// Shared URP materials — no per-instance material churn.
+        /// </summary>
+        GameObject CreateStylizedBuilding(string type, int level, int gridX, int gridZ)
+        {
+            if (type == "gold_mine") return CreateGoldMineVisual(level, gridX, gridZ);
+            if (type == "barracks") return CreateBarracksVisual(level, gridX, gridZ);
+            return CreateGreyboxCube(type, level, gridX, gridZ);
+        }
+
+        GameObject CreateGoldMineVisual(int level, int gridX, int gridZ)
+        {
+            var root = new GameObject("gold_mine_" + level);
+            var p = GridToWorld(gridX, gridZ);
+            root.transform.position = p;
+
+            // Raised stone pad.
+            AddPrim(root.transform, PrimitiveType.Cube, "Pad",
+                new Vector3(0f, 0.08f, 0f), new Vector3(1.15f, 0.16f, 1.15f), MatStone());
+
+            // Timber A-frame.
+            AddPrim(root.transform, PrimitiveType.Cube, "BeamL",
+                new Vector3(-0.38f, 0.55f, 0f), new Vector3(0.12f, 1.0f, 0.12f), MatWood());
+            AddPrim(root.transform, PrimitiveType.Cube, "BeamR",
+                new Vector3(0.38f, 0.55f, 0f), new Vector3(0.12f, 1.0f, 0.12f), MatWood());
+            AddPrim(root.transform, PrimitiveType.Cube, "Cross",
+                new Vector3(0f, 1.05f, 0f), new Vector3(0.95f, 0.1f, 0.1f), MatWood());
+
+            // Gold ore piles.
+            AddPrim(root.transform, PrimitiveType.Cube, "OreA",
+                new Vector3(0.05f, 0.28f, 0.22f), new Vector3(0.55f, 0.35f, 0.45f), MatGold());
+            AddPrim(root.transform, PrimitiveType.Sphere, "OreB",
+                new Vector3(-0.2f, 0.32f, -0.15f), new Vector3(0.42f, 0.32f, 0.42f), MatGold());
+            AddPrim(root.transform, PrimitiveType.Cube, "Crate",
+                new Vector3(0.35f, 0.22f, -0.35f), new Vector3(0.28f, 0.28f, 0.28f), MatDark());
+
+            // Level marker peg.
+            AddPrim(root.transform, PrimitiveType.Cylinder, "Peg",
+                new Vector3(0f, 1.25f, 0f), new Vector3(0.12f, 0.08f, 0.12f), MatGold());
+
+            return root;
+        }
+
+        GameObject CreateBarracksVisual(int level, int gridX, int gridZ)
+        {
+            var root = new GameObject("barracks_" + level);
+            var p = GridToWorld(gridX, gridZ);
+            root.transform.position = p;
+
+            AddPrim(root.transform, PrimitiveType.Cube, "Base",
+                new Vector3(0f, 0.1f, 0f), new Vector3(1.35f, 0.2f, 1.15f), MatStone());
+
+            // Tent body + cobalt roof (matches castle roof language).
+            AddPrim(root.transform, PrimitiveType.Cube, "Walls",
+                new Vector3(0f, 0.55f, 0f), new Vector3(1.2f, 0.7f, 0.95f), MatCanvas());
+            AddPrim(root.transform, PrimitiveType.Cube, "Roof",
+                new Vector3(0f, 1.05f, 0f), new Vector3(1.35f, 0.22f, 1.1f), MatRoof());
+            AddPrim(root.transform, PrimitiveType.Cube, "Ridge",
+                new Vector3(0f, 1.22f, 0f), new Vector3(0.2f, 0.18f, 1.05f), MatRoof());
+
+            // Door + banner pole.
+            AddPrim(root.transform, PrimitiveType.Cube, "Door",
+                new Vector3(0f, 0.42f, 0.48f), new Vector3(0.32f, 0.5f, 0.06f), MatDark());
+            AddPrim(root.transform, PrimitiveType.Cylinder, "Pole",
+                new Vector3(0.55f, 0.85f, 0.4f), new Vector3(0.06f, 0.7f, 0.06f), MatWood());
+            AddPrim(root.transform, PrimitiveType.Cube, "Banner",
+                new Vector3(0.55f, 1.15f, 0.52f), new Vector3(0.28f, 0.22f, 0.04f),
+                GetBuildingMat("banner", new Color(0.75f, 0.12f, 0.12f)));
+
+            return root;
+        }
+
+        static void AddPrim(Transform parent, PrimitiveType kind, string name, Vector3 localPos, Vector3 scale, Material mat)
+        {
+            var go = GameObject.CreatePrimitive(kind);
+            go.name = name;
+            go.transform.SetParent(parent, false);
+            go.transform.localPosition = localPos;
+            go.transform.localScale = scale;
+            var col = go.GetComponent<Collider>();
+            if (col != null) UnityEngine.Object.Destroy(col);
+            var rend = go.GetComponent<Renderer>();
+            if (rend != null)
+            {
+                rend.sharedMaterial = mat;
+                rend.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
+                rend.receiveShadows = true;
+            }
         }
 
         GameObject CreateGreyboxCube(string type, int level, int gridX, int gridZ)
@@ -1364,7 +1454,14 @@ namespace KoG.MiniMvp.App
             go.transform.position = new Vector3(p.x, height * 0.5f, p.z);
 
             var renderer = go.GetComponent<Renderer>();
-            renderer.sharedMaterial = GetGreyboxMaterial(type);
+            var color = type == "castle"
+                ? new Color(0.55f, 0.55f, 0.6f)
+                : type == "gold_mine"
+                    ? new Color(0.95f, 0.8f, 0.2f)
+                    : type == "barracks"
+                        ? new Color(0.4f, 0.55f, 0.9f)
+                        : Color.gray;
+            renderer.sharedMaterial = GetBuildingMat("grey_" + type, color);
             return go;
         }
 
