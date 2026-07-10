@@ -30,6 +30,7 @@ namespace KoG.MiniMvp.World
             var grid = go.AddComponent<BuildingGrid>();
             grid.gridSize = size;
             grid.cellSize = cell;
+            grid.drawGizmos = !Application.isPlaying; // Play: invisible; Edit: helpful
             // Cell (0,0) world = (0,0,0) in MiniMvpApp GridToWorld; field center is mid-cell.
             grid.Origin = Vector3.zero;
             grid.EnsureSnapSurface();
@@ -78,8 +79,9 @@ namespace KoG.MiniMvp.World
 
         void OnDrawGizmos()
         {
-            if (!drawGizmos) return;
-            if (!Application.isPlaying && gridSize <= 0) return;
+            // Never draw during Play — kataklar only via SoftFieldLook grass texture.
+            if (Application.isPlaying || !drawGizmos) return;
+            if (gridSize <= 0) return;
 
             Gizmos.color = gizmoColor;
             var half = cellSize * 0.5f;

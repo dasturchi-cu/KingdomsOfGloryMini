@@ -4,7 +4,7 @@ using UnityEngine.Rendering;
 namespace KoG.MiniMvp.Lighting
 {
     /// <summary>
-    /// CoC-style day lighting + soft fog so the phone view feels filled and smooth.
+    /// CoC / Might &amp; Glory day look + mobile quality knobs (soft shadow, MSAA, short shadow distance).
     /// </summary>
     public static class BaseLightingSetup
     {
@@ -12,30 +12,33 @@ namespace KoG.MiniMvp.Lighting
 
         public static void Apply(Vector3 fieldCenter)
         {
-            RenderSettings.ambientMode = AmbientMode.Trilight;
-            RenderSettings.ambientSkyColor = new Color(0.62f, 0.78f, 0.95f);
-            RenderSettings.ambientEquatorColor = new Color(0.88f, 0.90f, 0.72f);
-            RenderSettings.ambientGroundColor = new Color(0.36f, 0.46f, 0.28f);
-            RenderSettings.ambientIntensity = 1.1f;
-            RenderSettings.subtractiveShadowColor = new Color(0.38f, 0.46f, 0.36f);
-            RenderSettings.reflectionIntensity = 0.2f;
+            ApplyMobileQuality();
 
-            // Soft distance haze — hides hard world edge, CoC-like depth.
+            RenderSettings.ambientMode = AmbientMode.Trilight;
+            // Warm midday — reference is bright fantasy, not cold URP default.
+            RenderSettings.ambientSkyColor = new Color(0.68f, 0.82f, 0.95f);
+            RenderSettings.ambientEquatorColor = new Color(0.92f, 0.93f, 0.74f);
+            RenderSettings.ambientGroundColor = new Color(0.40f, 0.50f, 0.30f);
+            RenderSettings.ambientIntensity = 1.15f;
+            RenderSettings.subtractiveShadowColor = new Color(0.32f, 0.42f, 0.30f);
+            RenderSettings.reflectionIntensity = 0.15f;
+
+            // Very light haze — keep scene clean like the reference.
             RenderSettings.fog = true;
             RenderSettings.fogMode = FogMode.ExponentialSquared;
-            RenderSettings.fogColor = new Color(0.62f, 0.78f, 0.90f);
-            RenderSettings.fogDensity = 0.008f;
+            RenderSettings.fogColor = new Color(0.66f, 0.80f, 0.90f);
+            RenderSettings.fogDensity = 0.0045f;
 
             var sun = EnsureSun();
-            sun.transform.position = fieldCenter + new Vector3(-8f, 18f, -6f);
-            // Reference: light from top-left, soft warm midday.
-            sun.transform.rotation = Quaternion.Euler(48f, -35f, 0f);
-            sun.color = new Color(1f, 0.97f, 0.90f);
-            sun.intensity = 1.2f;
+            sun.transform.position = fieldCenter + new Vector3(-9f, 20f, -7f);
+            // Top-left key light (matches reference shadow direction).
+            sun.transform.rotation = Quaternion.Euler(46f, -32f, 0f);
+            sun.color = new Color(1f, 0.98f, 0.90f);
+            sun.intensity = 1.25f;
             sun.shadows = LightShadows.Soft;
-            sun.shadowStrength = 0.42f;
-            sun.shadowBias = 0.04f;
-            sun.shadowNormalBias = 0.35f;
+            sun.shadowStrength = 0.38f;
+            sun.shadowBias = 0.035f;
+            sun.shadowNormalBias = 0.4f;
             sun.shadowNearPlane = 0.2f;
             sun.renderMode = LightRenderMode.ForcePixel;
 
@@ -43,12 +46,27 @@ namespace KoG.MiniMvp.Lighting
             if (cam != null)
             {
                 cam.clearFlags = CameraClearFlags.SolidColor;
-                // Soft warm sky — reference midday fantasy, not harsh cyan.
-                cam.backgroundColor = new Color(0.58f, 0.78f, 0.92f);
+                cam.backgroundColor = new Color(0.60f, 0.80f, 0.93f);
                 cam.allowHDR = false;
                 cam.allowMSAA = true;
-                cam.farClipPlane = 220f;
+                cam.farClipPlane = 180f;
+                cam.nearClipPlane = 0.3f;
             }
+        }
+
+        /// <summary>Mobile-friendly quality: MSAA, soft shadows, short distance, 2 cascades.</summary>
+        public static void ApplyMobileQuality()
+        {
+            QualitySettings.antiAliasing = 4;
+            QualitySettings.shadows = ShadowQuality.All;
+            QualitySettings.shadowResolution = ShadowResolution.Medium;
+            QualitySettings.shadowDistance = 48f;
+            QualitySettings.shadowCascades = 2;
+            QualitySettings.shadowProjection = ShadowProjection.StableFit;
+            QualitySettings.anisotropicFiltering = AnisotropicFiltering.Enable;
+            QualitySettings.softParticles = false;
+            QualitySettings.realtimeReflectionProbes = false;
+            QualitySettings.billboardsFaceCameraPosition = true;
         }
 
         static Light EnsureSun()

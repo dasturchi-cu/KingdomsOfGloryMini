@@ -76,10 +76,12 @@ namespace KoG.MiniMvp.World
                 StripColliders(field);
                 MarkStatic(field);
                 UrpMaterialUtil.RemapToUrp(field);
+                SoftFieldLook.Apply(fieldRoot.transform, gridSize, fieldWorldSize);
             }
             else
             {
                 BuildProceduralChecker(fieldRoot.transform, gridSize, fieldWorldSize);
+                SoftFieldLook.Apply(fieldRoot.transform, gridSize, fieldWorldSize);
             }
 
             if (borderPrefab != null)
@@ -168,11 +170,7 @@ namespace KoG.MiniMvp.World
                 r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
                 r.receiveShadows = true;
                 r.allowOcclusionWhenDynamic = true;
-                var mats = r.sharedMaterials;
-                for (var i = 0; i < mats.Length; i++)
-                {
-                    if (mats[i] != null) mats[i].enableInstancing = true;
-                }
+                UrpMaterialUtil.ForceMobileStylized(r.gameObject);
             }
         }
 
@@ -197,10 +195,10 @@ namespace KoG.MiniMvp.World
             tex.wrapMode = TextureWrapMode.Clamp;
             tex.name = "FieldChecker";
 
-            // Match reference: soft lime checker, not harsh contrast.
+            // Match reference: soft lime checker (~10% contrast), not harsh.
             var light = new Color(0.62f, 0.86f, 0.40f);
-            var dark = new Color(0.48f, 0.72f, 0.34f);
-            var edge = new Color(0.36f, 0.54f, 0.26f);
+            var dark = new Color(0.56f, 0.80f, 0.36f);
+            var edge = new Color(0.34f, 0.50f, 0.24f);
 
             for (var y = 0; y < size; y++)
             {

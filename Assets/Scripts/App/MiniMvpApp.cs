@@ -238,8 +238,8 @@ namespace KoG.MiniMvp.App
             if (cam.GetComponent<UnityEngine.EventSystems.PhysicsRaycaster>() == null)
                 cam.gameObject.AddComponent<UnityEngine.EventSystems.PhysicsRaycaster>();
             _cocCamera.Configure(FieldCenter, FieldWorldSize, 5.5f);
-            // Reference framing: full diamond + nature border visible (CoC / M&G).
-            _cocCamera.FocusBase(FieldCenter, FieldWorldSize * 0.58f);
+            // Reference framing: full diamond + nature border, CoC / M&G feel.
+            _cocCamera.FocusBase(FieldCenter, FieldWorldSize * 0.55f);
             BaseLightingSetup.Apply(FieldCenter);
         }
 

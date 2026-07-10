@@ -5,6 +5,7 @@ namespace KoG.MiniMvp.World
 {
     /// <summary>
     /// Remaps Built-in Standard materials to URP Lit (pink-shader fix for imported FBX).
+    /// Also applies mobile stylized polish: low smoothness, instancing.
     /// </summary>
     public static class UrpMaterialUtil
     {
@@ -57,7 +58,7 @@ namespace KoG.MiniMvp.World
                             mapped.mainTexture = src.mainTexture;
                             if (mapped.HasProperty("_BaseMap")) mapped.SetTexture("_BaseMap", src.mainTexture);
                         }
-                        mapped.enableInstancing = true;
+                        ApplyMobileSurface(mapped);
                         Cache[key] = mapped;
                     }
                     next[i] = mapped;
@@ -65,6 +66,34 @@ namespace KoG.MiniMvp.World
                 }
                 if (changed) r.sharedMaterials = next;
             }
+
+            ForceMobileStylized(go);
+        }
+
+        /// <summary>Low gloss + GPU instancing — CoC matte look, fewer draw calls.</summary>
+        public static void ForceMobileStylized(GameObject go)
+        {
+            foreach (var r in go.GetComponentsInChildren<Renderer>(true))
+            {
+                var mats = r.materials;
+                for (var i = 0; i < mats.Length; i++)
+                {
+                    if (mats[i] == null) continue;
+                    ApplyMobileSurface(mats[i]);
+                }
+                r.materials = mats;
+            }
+        }
+
+        public static void ApplyMobileSurface(Material m)
+        {
+            if (m == null) return;
+            m.enableInstancing = true;
+            if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", 0.08f);
+            if (m.HasProperty("_Glossiness")) m.SetFloat("_Glossiness", 0.08f);
+            if (m.HasProperty("_Metallic")) m.SetFloat("_Metallic", 0f);
+            if (m.HasProperty("_SpecularHighlights")) m.SetFloat("_SpecularHighlights", 0f);
+            if (m.HasProperty("_EnvironmentReflections")) m.SetFloat("_EnvironmentReflections", 0f);
         }
     }
 }
