@@ -4,12 +4,13 @@ using UnityEngine;
 namespace KoG.MiniMvp.World
 {
     /// <summary>
-    /// CoC-style nature + outer world fill.
-    /// Primary: solid URP procedural trees (never pink).
-    /// Optional Nature2D sprites only with Sprites/Default (safe cutout).
+    /// CoC-smooth nature border with Might &amp; Glory bright fantasy palette.
+    /// Prefers Quaternius CC0 low-poly FBX from Resources; falls back to solid URP primitives.
     /// </summary>
     public static class NatureBorderBuilder
     {
+        const string Nature3DPath = "Environment/Nature3D/";
+
         static Material _bark;
         static Material _canopyA;
         static Material _canopyB;
@@ -19,29 +20,51 @@ namespace KoG.MiniMvp.World
         static Material _outerGrass;
         static Material _midGrass;
         static Material _shadowMat;
-        static Mesh _quad;
-        static readonly Dictionary<int, Material> SpriteMats = new Dictionary<int, Material>(8);
+        static Material _flower;
+        static Material _brightGrass;
 
-        static readonly string[] TreeNames = { "tree_large", "tree_medium" };
-        static readonly string[] RockNames = { "rock_tall", "rock_small" };
-        static readonly string[] BushNames = { "bush_patch" };
-        static Texture2D[] _spriteTrees;
-        static Texture2D[] _spriteRocks;
-        static Texture2D[] _spriteBushes;
+        static GameObject[] _treePrefabs;
+        static GameObject[] _bushPrefabs;
+        static GameObject[] _rockPrefabs;
+        static GameObject[] _plantPrefabs;
+        static bool _prefabsLoaded;
+
+        static readonly string[] TreeNames =
+        {
+            "CommonTree_1", "CommonTree_2", "CommonTree_3", "CommonTree_4", "CommonTree_5",
+            "BirchTree_1", "BirchTree_2", "BirchTree_3",
+            "PineTree_1", "PineTree_2", "PineTree_3", "PineTree_4", "PineTree_5"
+        };
+
+        static readonly string[] BushNames =
+        {
+            "Bush_1", "Bush_2", "BushBerries_1", "BushBerries_2"
+        };
+
+        static readonly string[] RockNames =
+        {
+            "Rock_1", "Rock_2", "Rock_3", "Rock_4", "Rock_5", "Rock_6", "Rock_7",
+            "Rock_Moss_1", "Rock_Moss_2", "Rock_Moss_3"
+        };
+
+        static readonly string[] PlantNames =
+        {
+            "Plant_1", "Plant_2", "Plant_3", "Plant_4", "Plant_5",
+            "Flowers", "Grass", "Grass_2", "Grass_Short"
+        };
 
         public static void Build(Transform fieldRoot, float fieldWorldSize)
         {
             EnsureMats();
+            EnsurePrefabs();
             BuildOuterWorld(fieldRoot, fieldWorldSize);
             BuildTreeRing(fieldRoot, fieldWorldSize);
         }
 
-        /// <summary>Huge grass disc so portrait phone never shows empty blue void.</summary>
         static void BuildOuterWorld(Transform fieldRoot, float fieldWorldSize)
         {
             var half = fieldWorldSize * 0.5f;
 
-            // Far outer — fills entire Game view on phone.
             var outer = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
             outer.name = "OuterWorld";
             outer.transform.SetParent(fieldRoot, false);
@@ -54,7 +77,6 @@ namespace KoG.MiniMvp.World
             or.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             or.receiveShadows = true;
 
-            // Mid ring — darker forest floor around the diamond.
             var mid = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
             mid.name = "ForestFloor";
             mid.transform.SetParent(fieldRoot, false);
@@ -75,204 +97,229 @@ namespace KoG.MiniMvp.World
 
             var half = fieldWorldSize * 0.5f;
             var radius = half + 1.85f;
-            var placed = new List<Vector3>(40);
+            var placed = new List<Vector3>(64);
+            var useFbx = _treePrefabs != null && _treePrefabs.Length > 0;
 
-            // Dense individual 3D trees — CoC perimeter.
-            for (var i = 0; i < 18; i++)
+            for (var i = 0; i < 20; i++)
             {
-                var ang = (i / 18f) * Mathf.PI * 2f + 0.08f;
+                var ang = (i / 20f) * Mathf.PI * 2f + 0.08f;
                 var jitter = ((i * 17) % 5) * 0.22f - 0.3f;
                 var pos = new Vector3(Mathf.Cos(ang) * (radius + jitter), 0f, Mathf.Sin(ang) * (radius + jitter));
-                if (!FarEnough(placed, pos, 1.95f)) continue;
-                SpawnProcTree(border.transform, pos, 0.95f + (i % 5) * 0.1f, i);
+                if (!FarEnough(placed, pos, 1.85f)) continue;
+                if (useFbx) SpawnFbxProp(border.transform, Pick(_treePrefabs, i), pos, 0.9f + (i % 5) * 0.08f, i, 2.4f);
+                else SpawnProcTree(border.transform, pos, 0.95f + (i % 5) * 0.1f, i);
                 placed.Add(pos);
             }
 
-            // Second outer ring — taller trees for depth.
+            for (var i = 0; i < 14; i++)
+            {
+                var ang = (i / 14f) * Mathf.PI * 2f + 0.31f;
+                var pos = new Vector3(Mathf.Cos(ang) * (radius + 1.7f), 0f, Mathf.Sin(ang) * (radius + 1.7f));
+                if (!FarEnough(placed, pos, 2.1f)) continue;
+                if (useFbx) SpawnFbxProp(border.transform, Pick(_treePrefabs, i + 7), pos, 1.05f + (i % 4) * 0.1f, i + 40, 2.8f);
+                else SpawnProcTree(border.transform, pos, 1.15f + (i % 4) * 0.12f, i + 40);
+                placed.Add(pos);
+            }
+
+            // Far scatter — fills phone edges like CoC forest.
+            for (var i = 0; i < 16; i++)
+            {
+                var ang = (i / 16f) * Mathf.PI * 2f + 0.19f;
+                var dist = radius + 3.2f + (i % 3) * 0.55f;
+                var pos = new Vector3(Mathf.Cos(ang) * dist, 0f, Mathf.Sin(ang) * dist);
+                if (!FarEnough(placed, pos, 2.4f)) continue;
+                if (useFbx) SpawnFbxProp(border.transform, Pick(_treePrefabs, i + 13), pos, 1.2f + (i % 3) * 0.15f, i + 80, 3.2f);
+                else SpawnProcTree(border.transform, pos, 1.25f + (i % 3) * 0.12f, i + 80);
+                placed.Add(pos);
+            }
+
             for (var i = 0; i < 12; i++)
             {
-                var ang = (i / 12f) * Mathf.PI * 2f + 0.31f;
-                var pos = new Vector3(Mathf.Cos(ang) * (radius + 1.6f), 0f, Mathf.Sin(ang) * (radius + 1.6f));
-                if (!FarEnough(placed, pos, 2.2f)) continue;
-                SpawnProcTree(border.transform, pos, 1.15f + (i % 4) * 0.12f, i + 40);
-                placed.Add(pos);
-            }
-
-            // Rocks / bushes between trees.
-            for (var i = 0; i < 10; i++)
-            {
-                var ang = (i / 10f) * Mathf.PI * 2f + 0.5f;
-                var pos = new Vector3(Mathf.Cos(ang) * (radius - 0.35f), 0f, Mathf.Sin(ang) * (radius - 0.35f));
-                if (!FarEnough(placed, pos, 1.3f)) continue;
-                if (i % 2 == 0) SpawnProcRock(border.transform, pos, 0.55f + (i % 3) * 0.1f);
-                else SpawnProcBush(border.transform, pos);
-                placed.Add(pos);
-            }
-
-            // Optional painted sprites on top of a few slots (only if cutout works).
-            TryScatterSprites(border.transform, placed, radius);
-
-            Debug.Log("[MiniMvp] Nature border — " + border.transform.childCount + " props + outer world fill");
-        }
-
-        static void TryScatterSprites(Transform parent, List<Vector3> placed, float radius)
-        {
-            EnsureSprites();
-            if (_spriteTrees == null || _spriteTrees.Length == 0) return;
-
-            for (var i = 0; i < 6; i++)
-            {
-                var ang = (i / 6f) * Mathf.PI * 2f + 0.15f;
-                var pos = new Vector3(Mathf.Cos(ang) * (radius + 0.9f), 0f, Mathf.Sin(ang) * (radius + 0.9f));
-                if (!FarEnough(placed, pos, 1.8f)) continue;
-                var tex = _spriteTrees[i % _spriteTrees.Length];
-                SpawnSafeSprite(parent, tex, pos, 2.6f + (i % 3) * 0.25f, i);
-                placed.Add(pos);
-            }
-        }
-
-        static void SpawnSafeSprite(Transform parent, Texture2D tex, Vector3 localPos, float height, int seed)
-        {
-            var root = new GameObject("Sprite_" + tex.name);
-            root.transform.SetParent(parent, false);
-            root.transform.localPosition = localPos;
-            SpawnShadow(root.transform, height * 0.22f);
-
-            var go = new GameObject("Billboard");
-            go.transform.SetParent(root.transform, false);
-            var mf = go.AddComponent<MeshFilter>();
-            mf.sharedMesh = SharedQuad();
-            var mr = go.AddComponent<MeshRenderer>();
-            mr.sharedMaterial = SpriteMat(tex);
-            mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            mr.receiveShadows = false;
-
-            var aspect = tex.width / (float)Mathf.Max(tex.height, 1);
-            var w = height * aspect;
-            go.transform.localScale = new Vector3(w, height, 1f);
-            go.transform.localPosition = new Vector3(0f, height * 0.48f, 0f);
-            go.transform.localRotation = Quaternion.Euler(35f, 45f + ((seed % 7) - 3) * 4f, 0f);
-        }
-
-        static Material SpriteMat(Texture2D tex)
-        {
-            var id = tex.GetInstanceID();
-            if (SpriteMats.TryGetValue(id, out var cached) && cached != null) return cached;
-
-            // Sprites/Default never pinks out under URP.
-            var shader = Shader.Find("Sprites/Default");
-            if (shader == null) shader = Shader.Find("Unlit/Transparent");
-            if (shader == null) shader = Shader.Find("Universal Render Pipeline/Unlit");
-            var mat = new Material(shader);
-            mat.mainTexture = tex;
-            if (mat.HasProperty("_MainTex")) mat.SetTexture("_MainTex", tex);
-            if (mat.HasProperty("_BaseMap")) mat.SetTexture("_BaseMap", tex);
-            if (mat.HasProperty("_Color")) mat.SetColor("_Color", Color.white);
-            if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", Color.white);
-            mat.renderQueue = 3000;
-            SpriteMats[id] = mat;
-            return mat;
-        }
-
-        static void EnsureSprites()
-        {
-            if (_spriteTrees != null) return;
-            _spriteTrees = LoadPunched(TreeNames);
-            _spriteRocks = LoadPunched(RockNames);
-            _spriteBushes = LoadPunched(BushNames);
-        }
-
-        static Texture2D[] LoadPunched(string[] names)
-        {
-            var list = new List<Texture2D>(names.Length);
-            for (var i = 0; i < names.Length; i++)
-            {
-                var src = Resources.Load<Texture2D>("Environment/Nature2D/" + names[i]);
-                if (src == null) continue;
-                var punched = PunchCreamBackground(src);
-                if (punched != null) list.Add(punched);
-            }
-            return list.ToArray();
-        }
-
-        static Texture2D PunchCreamBackground(Texture2D src)
-        {
-            Texture2D readable = src;
-            if (!src.isReadable)
-            {
-                var rt = RenderTexture.GetTemporary(src.width, src.height, 0, RenderTextureFormat.ARGB32);
-                Graphics.Blit(src, rt);
-                var prev = RenderTexture.active;
-                RenderTexture.active = rt;
-                readable = new Texture2D(src.width, src.height, TextureFormat.RGBA32, false);
-                readable.ReadPixels(new Rect(0, 0, src.width, src.height), 0, 0);
-                readable.Apply(false, false);
-                RenderTexture.active = prev;
-                RenderTexture.ReleaseTemporary(rt);
-            }
-
-            var w = readable.width;
-            var h = readable.height;
-            var pixels = readable.GetPixels32();
-            var key = pixels[0];
-            var minX = w;
-            var minY = h;
-            var maxX = 0;
-            var maxY = 0;
-            var kept = 0;
-
-            for (var y = 0; y < h; y++)
-            {
-                for (var x = 0; x < w; x++)
+                var ang = (i / 12f) * Mathf.PI * 2f + 0.5f;
+                var pos = new Vector3(Mathf.Cos(ang) * (radius - 0.25f), 0f, Mathf.Sin(ang) * (radius - 0.25f));
+                if (!FarEnough(placed, pos, 1.2f)) continue;
+                if (i % 2 == 0)
                 {
-                    var i = y * w + x;
-                    var p = pixels[i];
-                    var dr = p.r - key.r;
-                    var dg = p.g - key.g;
-                    var db = p.b - key.b;
-                    var bg = p.a < 16 || (dr * dr + dg * dg + db * db) < 55 * 55 || (p.r > 235 && p.g > 230 && p.b > 210);
-                    if (bg)
-                    {
-                        pixels[i] = new Color32(0, 0, 0, 0);
-                    }
+                    if (_rockPrefabs != null && _rockPrefabs.Length > 0)
+                        SpawnFbxProp(border.transform, Pick(_rockPrefabs, i), pos, 0.7f + (i % 3) * 0.12f, i + 100, 1.1f);
                     else
-                    {
-                        kept++;
-                        if (x < minX) minX = x;
-                        if (y < minY) minY = y;
-                        if (x > maxX) maxX = x;
-                        if (y > maxY) maxY = y;
-                    }
+                        SpawnProcRock(border.transform, pos, 0.55f + (i % 3) * 0.1f);
+                }
+                else
+                {
+                    if (_bushPrefabs != null && _bushPrefabs.Length > 0)
+                        SpawnFbxProp(border.transform, Pick(_bushPrefabs, i), pos, 0.85f + (i % 3) * 0.1f, i + 120, 1.0f);
+                    else
+                        SpawnProcBush(border.transform, pos);
+                }
+                placed.Add(pos);
+            }
+
+            if (_plantPrefabs != null && _plantPrefabs.Length > 0)
+            {
+                for (var i = 0; i < 10; i++)
+                {
+                    var ang = (i / 10f) * Mathf.PI * 2f + 0.72f;
+                    var pos = new Vector3(Mathf.Cos(ang) * (radius + 0.55f), 0f, Mathf.Sin(ang) * (radius + 0.55f));
+                    if (!FarEnough(placed, pos, 1.0f)) continue;
+                    SpawnFbxProp(border.transform, Pick(_plantPrefabs, i), pos, 0.9f + (i % 4) * 0.08f, i + 140, 0.7f);
+                    placed.Add(pos);
                 }
             }
 
-            if (kept < 64) return null;
-            minX = Mathf.Max(0, minX - 1);
-            minY = Mathf.Max(0, minY - 1);
-            maxX = Mathf.Min(w - 1, maxX + 1);
-            maxY = Mathf.Min(h - 1, maxY + 1);
-            var cw = maxX - minX + 1;
-            var ch = maxY - minY + 1;
-            var cropped = new Color32[cw * ch];
-            for (var y = 0; y < ch; y++)
-            for (var x = 0; x < cw; x++)
-                cropped[y * cw + x] = pixels[(minY + y) * w + (minX + x)];
-
-            var outTex = new Texture2D(cw, ch, TextureFormat.RGBA32, false);
-            outTex.name = src.name + "_cut";
-            outTex.filterMode = FilterMode.Bilinear;
-            outTex.SetPixels32(cropped);
-            outTex.Apply(false, true);
-            return outTex;
+            Debug.Log("[MiniMvp] Nature border — " + border.transform.childCount +
+                      " props (fbx=" + useFbx + ") + outer world fill");
         }
 
-        static Mesh SharedQuad()
+        static GameObject Pick(GameObject[] arr, int seed)
         {
-            if (_quad != null) return _quad;
-            var tmp = GameObject.CreatePrimitive(PrimitiveType.Quad);
-            _quad = tmp.GetComponent<MeshFilter>().sharedMesh;
-            Object.Destroy(tmp);
-            return _quad;
+            return arr[Mathf.Abs(seed) % arr.Length];
+        }
+
+        static void SpawnFbxProp(Transform parent, GameObject prefab, Vector3 localPos, float scale, int seed,
+            float shadowRadius)
+        {
+            if (prefab == null) return;
+
+            var root = new GameObject("LP_" + prefab.name + "_" + seed);
+            root.transform.SetParent(parent, false);
+            root.transform.localPosition = localPos;
+            root.transform.localRotation = Quaternion.Euler(0f, seed * 37.3f, 0f);
+
+            SpawnShadow(root.transform, shadowRadius * scale * 0.35f);
+
+            var go = Object.Instantiate(prefab, root.transform, false);
+            go.name = "Mesh";
+            go.transform.localPosition = Vector3.zero;
+            go.transform.localRotation = Quaternion.identity;
+            go.transform.localScale = Vector3.one;
+
+            // Quaternius FBX often imports huge or tiny — normalize height.
+            NormalizeHeight(go, targetHeight: 2.2f * scale);
+            StripColliders(go);
+            UrpMaterialUtil.RemapToUrp(go);
+            StylizeNatureColors(go);
+        }
+
+        static void NormalizeHeight(GameObject go, float targetHeight)
+        {
+            var local = ComputeLocalBounds(go);
+            var h = local.size.y;
+            if (h < 0.01f) return;
+            var s = targetHeight / h;
+            go.transform.localScale = Vector3.one * s;
+
+            // Plant feet on ground — pivot often sits mid-mesh on Quaternius FBX.
+            local = ComputeLocalBounds(go);
+            go.transform.localPosition = new Vector3(0f, -local.min.y, 0f);
+        }
+
+        static Bounds ComputeLocalBounds(GameObject go)
+        {
+            var filters = go.GetComponentsInChildren<MeshFilter>(true);
+            var bounds = new Bounds(Vector3.zero, Vector3.zero);
+            var any = false;
+            for (var i = 0; i < filters.Length; i++)
+            {
+                var mf = filters[i];
+                if (mf.sharedMesh == null) continue;
+                var b = mf.sharedMesh.bounds;
+                var t = mf.transform;
+                var worldCenter = t.TransformPoint(b.center);
+                var localCenter = go.transform.InverseTransformPoint(worldCenter);
+                var worldSize = Vector3.Scale(b.size, Abs(t.lossyScale));
+                var localSize = new Vector3(
+                    worldSize.x / Mathf.Max(0.0001f, Mathf.Abs(go.transform.lossyScale.x)),
+                    worldSize.y / Mathf.Max(0.0001f, Mathf.Abs(go.transform.lossyScale.y)),
+                    worldSize.z / Mathf.Max(0.0001f, Mathf.Abs(go.transform.lossyScale.z)));
+                var nb = new Bounds(localCenter, localSize);
+                if (!any) { bounds = nb; any = true; }
+                else bounds.Encapsulate(nb);
+            }
+            return any ? bounds : new Bounds(Vector3.zero, Vector3.one);
+        }
+
+        static Vector3 Abs(Vector3 v) => new Vector3(Mathf.Abs(v.x), Mathf.Abs(v.y), Mathf.Abs(v.z));
+
+        static void StripColliders(GameObject go)
+        {
+            foreach (var c in go.GetComponentsInChildren<Collider>(true))
+                Object.Destroy(c);
+        }
+
+        /// <summary>Boost albedo toward bright M&amp;G / CoC cartoon greens.</summary>
+        static void StylizeNatureColors(GameObject go)
+        {
+            foreach (var r in go.GetComponentsInChildren<Renderer>(true))
+            {
+                var mats = r.materials;
+                for (var i = 0; i < mats.Length; i++)
+                {
+                    var m = mats[i];
+                    if (m == null) continue;
+                    var c = Color.white;
+                    if (m.HasProperty("_BaseColor")) c = m.GetColor("_BaseColor");
+                    else if (m.HasProperty("_Color")) c = m.GetColor("_Color");
+
+                    var name = (m.name ?? string.Empty).ToLowerInvariant();
+                    Color next;
+                    if (name.Contains("bark") || name.Contains("wood") || name.Contains("trunk") ||
+                        (c.r > c.g * 0.85f && c.g < 0.45f && c.b < 0.4f))
+                    {
+                        next = Color.Lerp(c, new Color(0.45f, 0.28f, 0.14f), 0.55f);
+                    }
+                    else if (name.Contains("rock") || name.Contains("stone") ||
+                             (c.r > 0.4f && Mathf.Abs(c.r - c.g) < 0.08f && Mathf.Abs(c.g - c.b) < 0.08f && c.g < 0.65f))
+                    {
+                        next = Color.Lerp(c, new Color(0.58f, 0.56f, 0.52f), 0.4f);
+                    }
+                    else if (name.Contains("flower") || name.Contains("berry") || c.r > c.g + 0.15f)
+                    {
+                        next = Color.Lerp(c, new Color(0.92f, 0.35f, 0.45f), 0.35f);
+                    }
+                    else
+                    {
+                        // Bright fantasy canopy — Clash-smooth, M&G saturated green.
+                        var bright = new Color(0.32f, 0.72f, 0.28f);
+                        next = Color.Lerp(c, bright, 0.5f);
+                        next = new Color(
+                            Mathf.Clamp01(next.r * 0.95f),
+                            Mathf.Clamp01(next.g * 1.15f),
+                            Mathf.Clamp01(next.b * 0.9f),
+                            1f);
+                    }
+
+                    if (m.HasProperty("_BaseColor")) m.SetColor("_BaseColor", next);
+                    if (m.HasProperty("_Color")) m.SetColor("_Color", next);
+                    if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", 0.12f);
+                }
+                r.materials = mats;
+            }
+        }
+
+        static void EnsurePrefabs()
+        {
+            if (_prefabsLoaded) return;
+            _prefabsLoaded = true;
+            _treePrefabs = LoadModels(TreeNames);
+            _bushPrefabs = LoadModels(BushNames);
+            _rockPrefabs = LoadModels(RockNames);
+            _plantPrefabs = LoadModels(PlantNames);
+            Debug.Log("[MiniMvp] Nature3D loaded trees=" + (_treePrefabs?.Length ?? 0) +
+                      " bushes=" + (_bushPrefabs?.Length ?? 0) +
+                      " rocks=" + (_rockPrefabs?.Length ?? 0) +
+                      " plants=" + (_plantPrefabs?.Length ?? 0));
+        }
+
+        static GameObject[] LoadModels(string[] names)
+        {
+            var list = new List<GameObject>(names.Length);
+            for (var i = 0; i < names.Length; i++)
+            {
+                var go = Resources.Load<GameObject>(Nature3DPath + names[i]);
+                if (go != null) list.Add(go);
+            }
+            return list.ToArray();
         }
 
         static bool FarEnough(List<Vector3> placed, Vector3 pos, float minDist)
@@ -293,15 +340,20 @@ namespace KoG.MiniMvp.World
             if (shader == null) shader = Shader.Find("Universal Render Pipeline/Simple Lit");
             if (shader == null) shader = Shader.Find("Standard");
 
-            _bark = NewMat(shader, new Color(0.40f, 0.26f, 0.14f));
-            _canopyA = NewMat(shader, new Color(0.18f, 0.48f, 0.18f));
-            _canopyB = NewMat(shader, new Color(0.28f, 0.58f, 0.22f));
-            _canopyC = NewMat(shader, new Color(0.22f, 0.52f, 0.28f));
-            _rock = NewMat(shader, new Color(0.52f, 0.52f, 0.48f));
-            _bush = NewMat(shader, new Color(0.26f, 0.55f, 0.22f));
-            _outerGrass = NewMat(shader, new Color(0.28f, 0.48f, 0.22f));
-            _midGrass = NewMat(shader, new Color(0.34f, 0.55f, 0.26f));
+            // Bright M&G / CoC grass palette (not muddy).
+            _bark = NewMat(shader, new Color(0.42f, 0.27f, 0.14f));
+            _canopyA = NewMat(shader, new Color(0.28f, 0.68f, 0.24f));
+            _canopyB = NewMat(shader, new Color(0.36f, 0.76f, 0.28f));
+            _canopyC = NewMat(shader, new Color(0.22f, 0.62f, 0.30f));
+            _rock = NewMat(shader, new Color(0.58f, 0.56f, 0.52f));
+            _bush = NewMat(shader, new Color(0.30f, 0.70f, 0.26f));
+            _outerGrass = NewMat(shader, new Color(0.34f, 0.62f, 0.28f));
+            _midGrass = NewMat(shader, new Color(0.40f, 0.70f, 0.32f));
+            _brightGrass = NewMat(shader, new Color(0.45f, 0.78f, 0.34f));
+            _flower = NewMat(shader, new Color(0.92f, 0.38f, 0.48f));
             _shadowMat = NewMat(Shader.Find("Universal Render Pipeline/Unlit") ?? shader, new Color(0.1f, 0.12f, 0.08f));
+            _ = _brightGrass;
+            _ = _flower;
         }
 
         static Material NewMat(Shader shader, Color color)
@@ -309,7 +361,7 @@ namespace KoG.MiniMvp.World
             var m = new Material(shader);
             if (m.HasProperty("_BaseColor")) m.SetColor("_BaseColor", color);
             if (m.HasProperty("_Color")) m.SetColor("_Color", color);
-            if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", 0.08f);
+            if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", 0.1f);
             m.enableInstancing = true;
             return m;
         }
@@ -323,11 +375,10 @@ namespace KoG.MiniMvp.World
 
             SpawnShadow(tree.transform, 0.75f * scale);
 
-            var trunk = Prim(tree.transform, PrimitiveType.Cylinder, "Trunk",
+            Prim(tree.transform, PrimitiveType.Cylinder, "Trunk",
                 new Vector3(0f, 0.72f * scale, 0f),
                 new Vector3(0.24f, 0.72f, 0.24f) * scale, _bark);
 
-            // 3 canopy clumps = one readable tree silhouette.
             var mats = new[] { _canopyA, _canopyB, _canopyC };
             Prim(tree.transform, PrimitiveType.Sphere, "Canopy0",
                 new Vector3(0f, 1.7f * scale, 0f),
@@ -338,7 +389,6 @@ namespace KoG.MiniMvp.World
             Prim(tree.transform, PrimitiveType.Sphere, "Canopy2",
                 new Vector3(-0.35f * scale, 2.0f * scale, -0.25f * scale),
                 new Vector3(0.9f, 0.8f, 0.9f) * scale, mats[(seed + 2) % 3]);
-            _ = trunk;
         }
 
         static void SpawnProcRock(Transform parent, Vector3 localPos, float scale)

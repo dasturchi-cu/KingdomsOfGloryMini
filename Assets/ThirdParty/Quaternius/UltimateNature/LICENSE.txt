@@ -1,0 +1,7 @@
+﻿Quaternius Ultimate Nature Pack (Jun 2019)
+License: CC0 1.0 Universal (Public Domain)
+Source: https://quaternius.com/packs/ultimatenature.html
+Also: https://opengameart.org/content/low-poly-nature-pack-1
+Author: Quaternius
+Imported: 2026-07-10
+Use: PLACEHOLDER prototype nature border for Kingdoms of Glory Mini MVP
