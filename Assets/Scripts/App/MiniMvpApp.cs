@@ -5,12 +5,13 @@ using System.Text;
 using KoG.MiniMvp.Camera;
 using KoG.MiniMvp.Lighting;
 using KoG.MiniMvp.Network;
+using KoG.MiniMvp.UI;
 using UnityEngine;
 
 namespace KoG.MiniMvp.App
 {
     /// <summary>
-    /// Self-bootstrapping Mini-MVP client (OnGUI — always clickable in Game view).
+    /// Self-bootstrapping Mini-MVP client. Game/Result use uGUI; Auth still OnGUI (Phase 7).
     /// </summary>
     public sealed class MiniMvpApp : MonoBehaviour
     {
@@ -46,6 +47,7 @@ namespace KoG.MiniMvp.App
         bool _busy;
         Transform _fieldRoot;
         CoCCameraController _cocCamera;
+        MiniMvpHud _hud;
         static Material _sharedFieldMat;
         static Texture2D _sharedCheckerTex;
 
@@ -76,11 +78,62 @@ namespace KoG.MiniMvp.App
             // Faqat Resources orqali spawn qilingan castle_1 ishlatiladi.
             DestroyLooseSceneCastles();
             BuildGround();
+            EnsureHud();
             if (SessionStore.HasSession)
             {
-                _screen = UiScreen.Game;
+                SetScreen(UiScreen.Game);
                 StartCoroutine(LoadPlayerState());
             }
+            else
+            {
+                SetScreen(UiScreen.Auth);
+            }
+        }
+
+        void EnsureHud()
+        {
+            if (_hud != null) return;
+            _hud = MiniMvpHud.Ensure(transform);
+            _hud.OnPlaceMine = () => StartCoroutine(PlaceBuilding("gold_mine"));
+            _hud.OnPlaceBarracks = () => StartCoroutine(PlaceBuilding("barracks"));
+            _hud.OnCollect = () => StartCoroutine(CollectGold());
+            _hud.OnTrain = () => StartCoroutine(TrainTroops(10));
+            _hud.OnUpgrade = () => StartCoroutine(UpgradeSelected());
+            _hud.OnStartRaid = () => StartCoroutine(StartRaid());
+            _hud.OnCompleteRaid = () => StartCoroutine(CompleteRaid());
+            _hud.OnLogout = () =>
+            {
+                SessionStore.Clear();
+                ClearBuildings();
+                SetScreen(UiScreen.Auth);
+                SetStatus("Logged out");
+            };
+            _hud.OnResultOk = () =>
+            {
+                SetScreen(UiScreen.Game);
+                StartCoroutine(LoadPlayerState());
+            };
+            RefreshHud();
+        }
+
+        void SetScreen(UiScreen screen)
+        {
+            _screen = screen;
+            EnsureHud();
+            if (_hud == null) return;
+            _hud.ShowGame(screen == UiScreen.Game);
+            _hud.ShowResult(screen == UiScreen.Result);
+            RefreshHud();
+        }
+
+        void RefreshHud()
+        {
+            if (_hud == null) return;
+            _hud.SetBusy(_busy);
+            _hud.SetStatus(_status);
+            _hud.SetResources(_gold, _barbarianCount);
+            if (_screen == UiScreen.Result)
+                _hud.SetResultMessage(_resultMessage);
         }
 
         static void DestroyLooseSceneCastles()
@@ -653,14 +706,14 @@ namespace KoG.MiniMvp.App
             var w = UnityEngine.Screen.width;
             var h = UnityEngine.Screen.height;
 
-            // Always draw a dark bar so controls are visible.
-            GUI.Box(new Rect(0, h - 210, w, 210), GUIContent.none);
-            GUI.Label(new Rect(pad, 8, w - pad * 2, 32), "Kingdoms of Glory — Mini MVP", _titleStyle);
-            GUI.Label(new Rect(pad, 40, w - pad * 2, 50), _status, _statusStyle);
-
-            if (_screen == UiScreen.Auth) DrawAuth(pad, w, h);
-            else if (_screen == UiScreen.Game) DrawGame(pad, w, h);
-            else DrawResult(pad, w, h);
+            // Auth still uses OnGUI (Phase 7 moves it to uGUI). Game/Result use MiniMvpHud.
+            if (_screen == UiScreen.Auth)
+            {
+                GUI.Box(new Rect(0, h - 210, w, 210), GUIContent.none);
+                GUI.Label(new Rect(pad, 8, w - pad * 2, 32), "Kingdoms of Glory — Mini MVP", _titleStyle);
+                GUI.Label(new Rect(pad, 40, w - pad * 2, 50), _status, _statusStyle);
+                DrawAuth(pad, w, h);
+            }
         }
 
         void DrawAuth(float pad, float w, float h)
@@ -713,7 +766,7 @@ namespace KoG.MiniMvp.App
             {
                 SessionStore.Clear();
                 ClearBuildings();
-                _screen = UiScreen.Auth;
+                SetScreen(UiScreen.Auth);
                 SetStatus("Logged out");
             }
             GUI.enabled = true;
@@ -727,7 +780,7 @@ namespace KoG.MiniMvp.App
             GUI.Label(new Rect(pad, 90, w - pad * 2, 120), _resultMessage, _statusStyle);
             if (GUI.Button(new Rect(pad, h - 80, 200, 44), "OK — back to base", _btnStyle))
             {
-                _screen = UiScreen.Game;
+                SetScreen(UiScreen.Game);
                 StartCoroutine(LoadPlayerState());
             }
         }
@@ -741,7 +794,7 @@ namespace KoG.MiniMvp.App
 
         IEnumerator Register()
         {
-            _busy = true;
+            SetBusy(true);
             SetStatus("Registering...");
             var body = JsonObject(
                 ("username", _username.Trim()),
@@ -752,7 +805,7 @@ namespace KoG.MiniMvp.App
 
             yield return _api.PostJson("/api/v1/auth/register", body, null, null, (code, text) =>
             {
-                _busy = false;
+                SetBusy(false);
                 if (code < 200 || code >= 300)
                 {
                     SetStatus("Register failed: " + ExtractError(text));
@@ -761,7 +814,7 @@ namespace KoG.MiniMvp.App
 
                 var res = JsonUtility.FromJson<AuthResponse>(text);
                 SessionStore.Save(res.playerId, res.token, res.refreshToken);
-                _screen = UiScreen.Game;
+                SetScreen(UiScreen.Game);
                 SetStatus("Registered. Endi Place Mine bosing.");
                 StartCoroutine(LoadPlayerState());
             });
@@ -769,7 +822,7 @@ namespace KoG.MiniMvp.App
 
         IEnumerator Login()
         {
-            _busy = true;
+            SetBusy(true);
             SetStatus("Logging in...");
             var body = JsonObject(
                 ("username", _username.Trim()),
@@ -778,7 +831,7 @@ namespace KoG.MiniMvp.App
 
             yield return _api.PostJson("/api/v1/auth/login", body, null, null, (code, text) =>
             {
-                _busy = false;
+                SetBusy(false);
                 if (code < 200 || code >= 300)
                 {
                     SetStatus("Login failed: " + ExtractError(text));
@@ -788,7 +841,7 @@ namespace KoG.MiniMvp.App
                 var res = JsonUtility.FromJson<AuthResponse>(text);
                 SessionStore.Save(res.playerId, res.token, res.refreshToken);
                 if (res.player != null) _gold = res.player.gold;
-                _screen = UiScreen.Game;
+                SetScreen(UiScreen.Game);
                 SetStatus("Logged in.");
                 StartCoroutine(LoadPlayerState());
             });
@@ -796,11 +849,11 @@ namespace KoG.MiniMvp.App
 
         IEnumerator LoadPlayerState()
         {
-            _busy = true;
+            SetBusy(true);
             SetStatus("Loading base...");
             yield return _api.GetJson("/api/v1/player/state", SessionStore.Token, (code, text) =>
             {
-                _busy = false;
+                SetBusy(false);
                 if (code < 200 || code >= 300)
                 {
                     SetStatus("State load failed: " + ExtractError(text));
@@ -837,6 +890,7 @@ namespace KoG.MiniMvp.App
 
                 SetStatus(BuildNextStepHint(hasMine, hasBarracks, buildingCount));
                 FrameCameraOnBase();
+                RefreshHud();
             });
         }
 
@@ -866,7 +920,7 @@ namespace KoG.MiniMvp.App
                 yield break;
             }
 
-            _busy = true;
+            SetBusy(true);
             SetStatus("Placing " + buildingType + "...");
             var body = JsonObject(
                 ("playerId", SessionStore.PlayerId),
@@ -882,7 +936,7 @@ namespace KoG.MiniMvp.App
                 ApiClient.NewIdempotencyKey(),
                 (code, text) =>
                 {
-                    _busy = false;
+                    SetBusy(false);
                     if (code < 200 || code >= 300)
                     {
                         var err = ExtractError(text);
@@ -904,12 +958,12 @@ namespace KoG.MiniMvp.App
 
         IEnumerator CollectGold()
         {
-            _busy = true;
+            SetBusy(true);
             SetStatus("Collecting...");
             var body = JsonObject(("playerId", SessionStore.PlayerId));
             yield return _api.PostJson("/api/v1/resources/collect", body, SessionStore.Token, null, (code, text) =>
             {
-                _busy = false;
+                SetBusy(false);
                 if (code < 200 || code >= 300)
                 {
                     SetStatus("Collect failed: " + ExtractError(text));
@@ -923,7 +977,7 @@ namespace KoG.MiniMvp.App
 
         IEnumerator TrainTroops(int quantity)
         {
-            _busy = true;
+            SetBusy(true);
             SetStatus("Training...");
             var body = JsonObject(
                 ("playerId", SessionStore.PlayerId),
@@ -933,7 +987,7 @@ namespace KoG.MiniMvp.App
 
             yield return _api.PostJson("/api/v1/troops/train", body, SessionStore.Token, null, (code, text) =>
             {
-                _busy = false;
+                SetBusy(false);
                 if (code < 200 || code >= 300)
                 {
                     SetStatus("Train failed: " + ExtractError(text) + " (avval Barracks + gold kerak)");
@@ -954,7 +1008,7 @@ namespace KoG.MiniMvp.App
                 yield break;
             }
 
-            _busy = true;
+            SetBusy(true);
             SetStatus("Upgrading...");
             var body = JsonObject(
                 ("playerId", SessionStore.PlayerId),
@@ -968,7 +1022,7 @@ namespace KoG.MiniMvp.App
                 ApiClient.NewIdempotencyKey(),
                 (code, text) =>
                 {
-                    _busy = false;
+                    SetBusy(false);
                     if (code < 200 || code >= 300)
                     {
                         SetStatus("Upgrade failed: " + ExtractError(text));
@@ -982,7 +1036,7 @@ namespace KoG.MiniMvp.App
 
         IEnumerator StartRaid()
         {
-            _busy = true;
+            SetBusy(true);
             SetStatus("Starting raid...");
             var body = JsonObject(
                 ("playerId", SessionStore.PlayerId),
@@ -991,7 +1045,7 @@ namespace KoG.MiniMvp.App
 
             yield return _api.PostJson("/api/v1/campaign/start", body, SessionStore.Token, null, (code, text) =>
             {
-                _busy = false;
+                SetBusy(false);
                 if (code < 200 || code >= 300)
                 {
                     SetStatus("Raid start failed: " + ExtractError(text) + " (askar kerak)");
@@ -1012,7 +1066,7 @@ namespace KoG.MiniMvp.App
                 yield break;
             }
 
-            _busy = true;
+            SetBusy(true);
             SetStatus("Completing raid...");
             var body =
                 "{\"playerId\":\"" + SessionStore.PlayerId +
@@ -1025,7 +1079,7 @@ namespace KoG.MiniMvp.App
                 ApiClient.NewIdempotencyKey(),
                 (code, text) =>
                 {
-                    _busy = false;
+                    SetBusy(false);
                     if (code < 200 || code >= 300)
                     {
                         SetStatus("Raid complete failed: " + ExtractError(text));
@@ -1037,8 +1091,9 @@ namespace KoG.MiniMvp.App
                     var stars = res.battleResult != null ? res.battleResult.stars : res.starsEarned;
                     var loot = res.loot != null ? res.loot.gold : 0;
                     _resultMessage = "G'alaba!\nStars: " + stars + "\nLoot: +" + loot + " gold\nBalance: " + _gold;
-                    _screen = UiScreen.Result;
+                    SetScreen(UiScreen.Result);
                     SetStatus("Raid complete");
+                    RefreshHud();
                 });
         }
 
@@ -1503,6 +1558,13 @@ namespace KoG.MiniMvp.App
         {
             _status = message;
             Debug.Log("[MiniMvp] " + message);
+            if (_hud != null) _hud.SetStatus(_status);
+        }
+
+        void SetBusy(bool busy)
+        {
+            _busy = busy;
+            if (_hud != null) _hud.SetBusy(_busy);
         }
 
         static string ExtractError(string text)

@@ -18,7 +18,7 @@ namespace KoG.MiniMvp.Camera
         const float ScrollZoomSpeed = 1.2f;
         const float MinOrtho = 6f;
         const float MaxOrtho = 18f;
-        const float UiBottomGuardPx = 130f;
+        const float UiBottomGuardPx = 175f;
 
         UnityEngine.Camera _cam;
         Vector3 _fieldCenter;
