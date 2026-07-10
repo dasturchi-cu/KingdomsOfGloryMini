@@ -160,7 +160,7 @@ namespace KoG.MiniMvp.World
 
             if (_aoRingMat == null)
             {
-                var shader = Shader.Find("Universal Render Pipeline/Unlit");
+                var shader = UrpMaterialUtil.FindUnlitShader();
                 if (shader == null) shader = Shader.Find("Unlit/Transparent");
                 if (shader == null) shader = Shader.Find("Sprites/Default");
                 _aoRingMat = new Material(shader);

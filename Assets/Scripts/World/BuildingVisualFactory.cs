@@ -132,8 +132,7 @@ namespace KoG.MiniMvp.World
             if (Mats.TryGetValue(key, out var existing) && existing != null)
                 return existing;
 
-            var shader = Shader.Find("Universal Render Pipeline/Lit");
-            if (shader == null) shader = Shader.Find("Universal Render Pipeline/Simple Lit");
+            var shader = UrpMaterialUtil.FindLitShader();
             if (shader == null) shader = Shader.Find("Standard");
 
             var mat = new Material(shader);

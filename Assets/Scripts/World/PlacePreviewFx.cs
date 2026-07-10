@@ -75,7 +75,7 @@ namespace KoG.MiniMvp.World
 
         static Material MakeMat(Color c)
         {
-            var shader = Shader.Find("Universal Render Pipeline/Unlit");
+            var shader = UrpMaterialUtil.FindUnlitShader();
             if (shader == null) shader = Shader.Find("Unlit/Transparent");
             if (shader == null) shader = Shader.Find("Sprites/Default");
             var m = new Material(shader);

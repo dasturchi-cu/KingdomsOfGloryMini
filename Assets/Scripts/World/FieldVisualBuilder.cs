@@ -170,8 +170,7 @@ namespace KoG.MiniMvp.World
             if (_sharedFieldMat == null)
             {
                 _sharedCheckerTex = CreateCheckerTexture(gridSize, 8);
-                var shader = Shader.Find("Universal Render Pipeline/Lit");
-                if (shader == null) shader = Shader.Find("Universal Render Pipeline/Simple Lit");
+                var shader = UrpMaterialUtil.FindLitShader();
                 if (shader == null) shader = Shader.Find("Standard");
                 _sharedFieldMat = new Material(shader);
                 _sharedFieldMat.mainTexture = _sharedCheckerTex;

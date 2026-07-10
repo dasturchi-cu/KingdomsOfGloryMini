@@ -54,3 +54,7 @@ Batafsil: [`ISO_BASE_BOSQICH_1_2.md`](./ISO_BASE_BOSQICH_1_2.md)
 
 `Assets/Scripts/World/`, nature polish va boshqalar â€” avvalgi prototip.  
 Yangi isometric base-building yoâ€˜li: **`Assets/Scripts/IsoBase/`**.
+
+## Render Pipeline
+
+**Built-in (Standard)** — URP o‘chirilgan (Polygon assetlar pushti bo‘lmasin).

@@ -38,10 +38,10 @@ namespace KoG.MiniMvp.World
             _cachedCells = cells;
             var tex = CreateCombinedCheckerAndRim(cells, 16);
 
-            var shader = Shader.Find("Universal Render Pipeline/Unlit");
+            var shader = UrpMaterialUtil.FindUnlitShader();
             if (shader == null) shader = Shader.Find("Unlit/Transparent");
             if (shader == null) shader = Shader.Find("Sprites/Default");
-            if (shader == null) shader = Shader.Find("Universal Render Pipeline/Lit");
+            if (shader == null) shader = UrpMaterialUtil.FindLitShader();
 
             _combinedMat = new Material(shader);
             _combinedMat.name = "SoftFieldCombined_Mat";

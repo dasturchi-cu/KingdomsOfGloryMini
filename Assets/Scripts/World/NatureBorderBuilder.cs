@@ -336,8 +336,7 @@ namespace KoG.MiniMvp.World
         static void EnsureMats()
         {
             if (_bark != null) return;
-            var shader = Shader.Find("Universal Render Pipeline/Lit");
-            if (shader == null) shader = Shader.Find("Universal Render Pipeline/Simple Lit");
+            var shader = UrpMaterialUtil.FindLitShader();
             if (shader == null) shader = Shader.Find("Standard");
 
             // Bright M&G / CoC grass palette (not muddy).
@@ -351,7 +350,7 @@ namespace KoG.MiniMvp.World
             _midGrass = NewMat(shader, new Color(0.40f, 0.70f, 0.32f));
             _brightGrass = NewMat(shader, new Color(0.45f, 0.78f, 0.34f));
             _flower = NewMat(shader, new Color(0.92f, 0.38f, 0.48f));
-            _shadowMat = NewMat(Shader.Find("Universal Render Pipeline/Unlit") ?? shader, new Color(0.1f, 0.12f, 0.08f));
+            _shadowMat = NewMat(UrpMaterialUtil.FindUnlitShader() ?? shader, new Color(0.1f, 0.12f, 0.08f));
             _ = _brightGrass;
             _ = _flower;
         }
