@@ -1,10 +1,12 @@
 using UnityEngine;
+using UnityEngine.InputSystem;
+using UnityEngine.InputSystem.Controls;
 
 namespace KoG.MiniMvp.Camera
 {
     /// <summary>
     /// Clash of Clans / Might &amp; Glory style orthographic base camera.
-    /// Simulator-tuned: soft edge bounce, smooth focus, pinch/scroll zoom, momentum pan.
+    /// Uses NEW Input System only (no UnityEngine.Input — avoids InvalidOperationException spam).
     /// </summary>
     public sealed class CoCCameraController : MonoBehaviour
     {
@@ -20,7 +22,7 @@ namespace KoG.MiniMvp.Camera
         const float MaxOrtho = 18f;
         const float UiBottomGuardPx = 190f;
         const float SoftClampStrength = 8f;
-        const float EdgeRubber = 2.8f; // soft overshoot before hard stop (CoC bounce)
+        const float EdgeRubber = 2.8f;
         const float FocusLerp = 7.5f;
 
         UnityEngine.Camera _cam;
@@ -81,7 +83,6 @@ namespace KoG.MiniMvp.Camera
             ApplyTransform();
         }
 
-        /// <summary>Smooth pan toward a building (selection / place) — simulator feel.</summary>
         public void FocusSmooth(Vector3 focus, float? orthoSize = null)
         {
             _smoothTarget = new Vector3(focus.x, 0f, focus.z);
@@ -138,14 +139,12 @@ namespace KoG.MiniMvp.Camera
                 return;
             }
 
-            // Elastic pull-back when past soft edge (CoC simulator feel).
             if (_focus.x < minX) _focus.x = Mathf.Lerp(_focus.x, minX, SoftClampStrength * Time.deltaTime);
             else if (_focus.x > maxX) _focus.x = Mathf.Lerp(_focus.x, maxX, SoftClampStrength * Time.deltaTime);
             if (_focus.z < minZ) _focus.z = Mathf.Lerp(_focus.z, minZ, SoftClampStrength * Time.deltaTime);
             else if (_focus.z > maxZ) _focus.z = Mathf.Lerp(_focus.z, maxZ, SoftClampStrength * Time.deltaTime);
             _focus.y = 0f;
 
-            // Hard safety if dragged far — short rubber band then stop.
             var hardLim = lim + EdgeRubber;
             _focus.x = Mathf.Clamp(_focus.x, _fieldCenter.x - hardLim, _fieldCenter.x + hardLim);
             _focus.z = Mathf.Clamp(_focus.z, _fieldCenter.z - hardLim, _fieldCenter.z + hardLim);
@@ -155,7 +154,7 @@ namespace KoG.MiniMvp.Camera
         {
             if (!_smoothing) return;
             _focus = Vector3.Lerp(_focus, _smoothTarget, 1f - Mathf.Exp(-FocusLerp * Time.deltaTime));
-            if (( _focus - _smoothTarget).sqrMagnitude < 0.0025f)
+            if ((_focus - _smoothTarget).sqrMagnitude < 0.0025f)
             {
                 _focus = _smoothTarget;
                 _smoothing = false;
@@ -164,25 +163,39 @@ namespace KoG.MiniMvp.Camera
 
         void HandleTouch()
         {
-            var count = Input.touchCount;
-            if (count == 0)
+            var ts = Touchscreen.current;
+            if (ts == null)
             {
-                if (_activeFinger >= 0)
-                {
-                    _dragging = false;
-                    _panArmed = false;
-                    _activeFinger = -1;
-                    _lastPinchDist = -1f;
-                }
+                ResetTouchStateIfNeeded();
                 return;
             }
 
-            if (count >= 2)
+            // Collect active touches (pressed this frame or held).
+            TouchControl t0 = null;
+            TouchControl t1 = null;
+            int count = 0;
+            foreach (var touch in ts.touches)
             {
-                var a = Input.GetTouch(0);
-                var b = Input.GetTouch(1);
-                var dist = Vector2.Distance(a.position, b.position);
-                if (_lastPinchDist > 0f && (a.phase == TouchPhase.Moved || b.phase == TouchPhase.Moved))
+                if (!touch.press.isPressed && !touch.press.wasPressedThisFrame)
+                    continue;
+                if (count == 0) t0 = touch;
+                else if (count == 1) t1 = touch;
+                count++;
+                if (count >= 2) break;
+            }
+
+            if (count == 0)
+            {
+                ResetTouchStateIfNeeded();
+                return;
+            }
+
+            if (count >= 2 && t0 != null && t1 != null)
+            {
+                var a = t0.position.ReadValue();
+                var b = t1.position.ReadValue();
+                var dist = Vector2.Distance(a, b);
+                if (_lastPinchDist > 0f)
                 {
                     OrthoSize -= (dist - _lastPinchDist) * PinchZoomSpeed;
                     _velocity = Vector3.zero;
@@ -195,66 +208,23 @@ namespace KoG.MiniMvp.Camera
             }
 
             _lastPinchDist = -1f;
-            var t = Input.GetTouch(0);
-            if (IsOverUi(t.position)) return;
+            if (t0 == null) return;
 
-            if (t.phase == TouchPhase.Began)
+            var pos = t0.position.ReadValue();
+            var fingerId = t0.touchId.ReadValue();
+            if (IsOverUi(pos)) return;
+
+            if (t0.press.wasPressedThisFrame)
             {
-                _activeFinger = t.fingerId;
-                _lastPointer = t.position;
+                _activeFinger = fingerId;
+                _lastPointer = pos;
                 _dragging = true;
                 _panArmed = false;
                 _velocity = Vector3.zero;
                 _smoothing = false;
             }
-            else if (t.fingerId == _activeFinger && t.phase == TouchPhase.Moved)
+            else if (fingerId == _activeFinger && t0.press.isPressed)
             {
-                var delta = t.position - _lastPointer;
-                if (!_panArmed && delta.magnitude >= DragThresholdPx)
-                    _panArmed = true;
-                if (_panArmed)
-                {
-                    PanByScreenDelta(delta);
-                    _lastPointer = t.position;
-                }
-            }
-            else if (t.fingerId == _activeFinger && (t.phase == TouchPhase.Ended || t.phase == TouchPhase.Canceled))
-            {
-                _dragging = false;
-                _panArmed = false;
-                _activeFinger = -1;
-            }
-        }
-
-        void HandleMouseEditor()
-        {
-            if (Input.touchCount > 0) return;
-
-            var scroll = Input.mouseScrollDelta.y;
-            if (Mathf.Abs(scroll) > 0.01f)
-            {
-                OrthoSize -= scroll * ScrollZoomSpeed;
-                _velocity = Vector3.zero;
-                _smoothing = false;
-            }
-
-            // Middle-mouse or Alt+LMB also pans (editor simulator comfort).
-            var panBtn = Input.GetMouseButton(2) || (Input.GetMouseButton(0) && (Input.GetKey(KeyCode.LeftAlt) || Input.GetKey(KeyCode.RightAlt)));
-            var lmb = Input.GetMouseButton(0) && !Input.GetKey(KeyCode.LeftAlt) && !Input.GetKey(KeyCode.RightAlt);
-
-            if (IsOverUi(Input.mousePosition) && !Input.GetMouseButton(2)) return;
-
-            if (Input.GetMouseButtonDown(0) || Input.GetMouseButtonDown(2))
-            {
-                _lastPointer = Input.mousePosition;
-                _dragging = true;
-                _panArmed = Input.GetMouseButtonDown(2);
-                _velocity = Vector3.zero;
-                _smoothing = false;
-            }
-            else if (_dragging && (lmb || panBtn || Input.GetMouseButton(2)))
-            {
-                Vector2 pos = Input.mousePosition;
                 var delta = pos - _lastPointer;
                 if (!_panArmed && delta.magnitude >= DragThresholdPx)
                     _panArmed = true;
@@ -264,7 +234,75 @@ namespace KoG.MiniMvp.Camera
                     _lastPointer = pos;
                 }
             }
-            else if (_dragging && !Input.GetMouseButton(0) && !Input.GetMouseButton(2))
+            else if (fingerId == _activeFinger && t0.press.wasReleasedThisFrame)
+            {
+                _dragging = false;
+                _panArmed = false;
+                _activeFinger = -1;
+            }
+        }
+
+        void ResetTouchStateIfNeeded()
+        {
+            if (_activeFinger < 0) return;
+            _dragging = false;
+            _panArmed = false;
+            _activeFinger = -1;
+            _lastPinchDist = -1f;
+        }
+
+        void HandleMouseEditor()
+        {
+            // Real touch active — skip mouse (avoids double-handling on some devices).
+            if (Touchscreen.current != null)
+            {
+                foreach (var touch in Touchscreen.current.touches)
+                {
+                    if (touch.press.isPressed || touch.press.wasPressedThisFrame)
+                        return;
+                }
+            }
+
+            var mouse = Mouse.current;
+            if (mouse == null) return;
+
+            var scroll = mouse.scroll.ReadValue().y;
+            // Input System scroll is often in pixels; normalize roughly to old mouseScrollDelta feel.
+            if (Mathf.Abs(scroll) > 0.01f)
+            {
+                OrthoSize -= Mathf.Sign(scroll) * Mathf.Clamp(Mathf.Abs(scroll) * 0.01f, 0.1f, 3f) * ScrollZoomSpeed;
+                _velocity = Vector3.zero;
+                _smoothing = false;
+            }
+
+            var kb = Keyboard.current;
+            bool alt = kb != null && (kb.leftAltKey.isPressed || kb.rightAltKey.isPressed);
+            bool lmb = mouse.leftButton.isPressed && !alt;
+            bool panBtn = mouse.middleButton.isPressed || (mouse.leftButton.isPressed && alt);
+            Vector2 mousePos = mouse.position.ReadValue();
+
+            if (IsOverUi(mousePos) && !mouse.middleButton.isPressed) return;
+
+            if (mouse.leftButton.wasPressedThisFrame || mouse.middleButton.wasPressedThisFrame)
+            {
+                _lastPointer = mousePos;
+                _dragging = true;
+                _panArmed = mouse.middleButton.wasPressedThisFrame;
+                _velocity = Vector3.zero;
+                _smoothing = false;
+            }
+            else if (_dragging && (lmb || panBtn || mouse.middleButton.isPressed))
+            {
+                var delta = mousePos - _lastPointer;
+                if (!_panArmed && delta.magnitude >= DragThresholdPx)
+                    _panArmed = true;
+                if (_panArmed)
+                {
+                    PanByScreenDelta(delta);
+                    _lastPointer = mousePos;
+                }
+            }
+            else if (_dragging && !mouse.leftButton.isPressed && !mouse.middleButton.isPressed)
             {
                 _dragging = false;
                 _panArmed = false;
