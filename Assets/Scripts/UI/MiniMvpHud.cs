@@ -123,8 +123,18 @@ namespace KoG.MiniMvp.UI
             scaler.matchWidthOrHeight = 0.5f;
             canvasGo.AddComponent<GraphicRaycaster>();
 
+            var safeGo = new GameObject("SafeArea", typeof(RectTransform));
+            safeGo.transform.SetParent(canvasGo.transform, false);
+            var safeRt = safeGo.GetComponent<RectTransform>();
+            safeRt.anchorMin = Vector2.zero;
+            safeRt.anchorMax = Vector2.one;
+            safeRt.offsetMin = Vector2.zero;
+            safeRt.offsetMax = Vector2.zero;
+            safeGo.AddComponent<SafeAreaPad>();
+            var root = safeGo.transform;
+
             // Top status strip.
-            var top = Panel(canvasGo.transform, "TopBar",
+            var top = Panel(root, "TopBar",
                 new Vector2(0.5f, 1f), new Vector2(0.5f, 1f),
                 new Vector2(0f, -8f), new Vector2(1040f, 120f),
                 new Color(0f, 0f, 0f, 0.55f));
@@ -133,10 +143,10 @@ namespace KoG.MiniMvp.UI
             _status = Label(top.transform, "Status", "Ready", 20, TextAnchor.UpperLeft,
                 new Vector2(16f, -48f), new Vector2(1000f, 56f), new Color(1f, 0.95f, 0.6f));
 
-            BuildAuthPanel(canvasGo.transform);
+            BuildAuthPanel(root);
 
             // Bottom game actions.
-            _gameRoot = Panel(canvasGo.transform, "GameBar",
+            _gameRoot = Panel(root, "GameBar",
                 new Vector2(0.5f, 0f), new Vector2(0.5f, 0f),
                 new Vector2(0f, BottomBarHeight * 0.5f), new Vector2(1060f, BottomBarHeight),
                 new Color(0.05f, 0.05f, 0.08f, 0.88f)).gameObject;
@@ -165,7 +175,7 @@ namespace KoG.MiniMvp.UI
                 new Color(0.85f, 0.85f, 0.9f));
 
             // Result overlay.
-            _resultRoot = Panel(canvasGo.transform, "ResultPanel",
+            _resultRoot = Panel(root, "ResultPanel",
                 new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
                 Vector2.zero, new Vector2(720f, 360f),
                 new Color(0.08f, 0.08f, 0.12f, 0.94f)).gameObject;

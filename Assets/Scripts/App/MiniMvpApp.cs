@@ -23,6 +23,7 @@ namespace KoG.MiniMvp.App
         }
 
         [Header("Backend")]
+        [Tooltip("Editor/dev: http://127.0.0.1:3000. Release builds should use HTTPS.")]
         [SerializeField] string baseUrl = "http://127.0.0.1:3000";
 
         [Header("Grid")]
@@ -206,6 +207,8 @@ namespace KoG.MiniMvp.App
 
             _cocCamera = cam.GetComponent<CoCCameraController>();
             if (_cocCamera == null) _cocCamera = cam.gameObject.AddComponent<CoCCameraController>();
+            if (cam.GetComponent<UnityEngine.EventSystems.PhysicsRaycaster>() == null)
+                cam.gameObject.AddComponent<UnityEngine.EventSystems.PhysicsRaycaster>();
             _cocCamera.Configure(FieldCenter, FieldWorldSize, 3f);
             _cocCamera.FocusBase(FieldCenter, FieldWorldSize * 0.78f);
             BaseLightingSetup.Apply(FieldCenter);
@@ -1563,9 +1566,14 @@ namespace KoG.MiniMvp.App
         public int gridZ;
     }
 
-    public sealed class BuildingClickRelay : MonoBehaviour
+    public sealed class BuildingClickRelay : MonoBehaviour, UnityEngine.EventSystems.IPointerClickHandler
     {
         public System.Action onClick;
+
+        public void OnPointerClick(UnityEngine.EventSystems.PointerEventData eventData)
+        {
+            onClick?.Invoke();
+        }
 
         void OnMouseDown()
         {
