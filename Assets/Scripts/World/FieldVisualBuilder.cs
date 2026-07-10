@@ -97,13 +97,20 @@ namespace KoG.MiniMvp.World
                 MarkStatic(border);
                 UrpMaterialUtil.RemapToUrp(border);
                 OptimizeNatureRenderers(border);
+                // In-place quality only — never relocate / regenerate border props.
                 NatureVisualPolish.Apply(border, fieldWorldSize, fieldCenter);
             }
             else
             {
-                // Fallback only — not the reference composition.
+                // Fallback only — preserve builder placement; polish materials in place.
                 NatureBorderBuilder.Build(fieldRoot.transform, fieldWorldSize);
+                var fallback = fieldRoot.transform.Find("NatureBorder");
+                if (fallback != null)
+                    NatureVisualPolish.Apply(fallback.gameObject, fieldWorldSize, fieldCenter);
             }
+
+            // Decorations reserved for future authored props — do not procedural-redesign here.
+            _ = decorations;
 
             BuildingGrid.Build(gameplay.transform, gridSize, cellSize, fieldCenter);
             // Camera/Sun parenting happens after MiniMvpApp creates them — see FinalizeHierarchy.

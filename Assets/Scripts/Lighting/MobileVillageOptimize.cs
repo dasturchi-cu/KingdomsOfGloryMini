@@ -11,7 +11,8 @@ namespace KoG.MiniMvp.Lighting
     public static class MobileVillageOptimize
     {
         const string VolumeName = "KoG_PostVolume";
-        const int SoftRendererBudget = 60;
+        // Authored NatureBorder (~9 combined) + SoftField + AO — keep mobile-safe.
+        const int SoftRendererBudget = 70;
 
         public static void Apply(Transform villageRoot, UnityEngine.Camera cam)
         {
@@ -59,10 +60,10 @@ namespace KoG.MiniMvp.Lighting
 
             var color = profile.Add<ColorAdjustments>(true);
             color.active = true;
-            color.saturation.Override(8f);   // +8 — reference fantasy pop
-            color.contrast.Override(4f);     // slight punch, not harsh
-            color.postExposure.Override(0.05f);
-            color.hueShift.Override(0f);
+            color.saturation.Override(11f);  // fantasy pop — still clean, not neon
+            color.contrast.Override(6f);     // canopy / path separation on phone LCDs
+            color.postExposure.Override(0.06f);
+            color.hueShift.Override(2f);     // tiny warm bias toward golden hour greens
 
             // Keep look clean — no bloom / vignette for mobile CoC feel.
             var bloom = profile.Add<Bloom>(true);

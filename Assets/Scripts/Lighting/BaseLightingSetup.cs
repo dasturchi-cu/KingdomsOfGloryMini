@@ -15,28 +15,28 @@ namespace KoG.MiniMvp.Lighting
             ApplyMobileQuality();
 
             RenderSettings.ambientMode = AmbientMode.Trilight;
-            // Warm midday + slight saturation boost (reference fantasy greens).
-            RenderSettings.ambientSkyColor = new Color(0.70f, 0.84f, 0.96f);
-            RenderSettings.ambientEquatorColor = new Color(0.94f, 0.95f, 0.72f);
-            RenderSettings.ambientGroundColor = new Color(0.38f, 0.52f, 0.28f);
-            RenderSettings.ambientIntensity = 1.18f;
-            RenderSettings.subtractiveShadowColor = new Color(0.28f, 0.40f, 0.26f);
-            RenderSettings.reflectionIntensity = 0.12f;
+            // Warm midday fantasy — bright, clean, never muddy (CoC / M&G mobile).
+            RenderSettings.ambientSkyColor = new Color(0.72f, 0.86f, 0.98f);
+            RenderSettings.ambientEquatorColor = new Color(0.96f, 0.94f, 0.70f);
+            RenderSettings.ambientGroundColor = new Color(0.40f, 0.54f, 0.30f);
+            RenderSettings.ambientIntensity = 1.22f;
+            RenderSettings.subtractiveShadowColor = new Color(0.26f, 0.38f, 0.24f);
+            RenderSettings.reflectionIntensity = 0.10f;
 
-            // Very light haze — keep scene clean like the reference.
+            // Soft atmospheric depth — still readable on phone LCDs.
             RenderSettings.fog = true;
             RenderSettings.fogMode = FogMode.ExponentialSquared;
-            RenderSettings.fogColor = new Color(0.66f, 0.80f, 0.90f);
-            RenderSettings.fogDensity = 0.0045f;
+            RenderSettings.fogColor = new Color(0.68f, 0.82f, 0.92f);
+            RenderSettings.fogDensity = 0.0042f;
 
             var sun = EnsureSun();
             sun.transform.position = fieldCenter + new Vector3(-9f, 20f, -7f);
             // Top-left key light (matches reference shadow direction).
-            sun.transform.rotation = Quaternion.Euler(46f, -32f, 0f);
-            sun.color = new Color(1f, 0.99f, 0.88f);
-            sun.intensity = 1.28f;
+            sun.transform.rotation = Quaternion.Euler(48f, -34f, 0f);
+            sun.color = new Color(1f, 0.98f, 0.86f);
+            sun.intensity = 1.34f;
             sun.shadows = LightShadows.Soft;
-            sun.shadowStrength = 0.38f;
+            sun.shadowStrength = 0.46f;
             sun.shadowBias = 0.035f;
             sun.shadowNormalBias = 0.4f;
             sun.shadowNearPlane = 0.2f;
