@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Text;
 using KoG.MiniMvp.Camera;
+using KoG.MiniMvp.Lighting;
 using KoG.MiniMvp.Network;
 using UnityEngine;
 
@@ -132,6 +133,7 @@ namespace KoG.MiniMvp.App
             if (_cocCamera == null) _cocCamera = cam.gameObject.AddComponent<CoCCameraController>();
             _cocCamera.Configure(FieldCenter, FieldWorldSize, 3f);
             _cocCamera.FocusBase(FieldCenter, FieldWorldSize * 0.78f);
+            BaseLightingSetup.Apply(FieldCenter);
         }
 
         /// <summary>
