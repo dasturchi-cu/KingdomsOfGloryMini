@@ -1,0 +1,31 @@
+{
+    "asset": "dc1d37d844d4281488e5d701c8631281",
+    "fileName": "019f4be2-8f15-790b-ada8-c3cb2aa09cf2.png",
+    "prompt": "Low-poly stylized mobile base-builder fortress, 2.5D isometric high-angle view, Clash of Clans toy-like art style. TURKIC / UZBEK / CENTRAL ASIAN architecture (Samarkand, Bukhara style) — NOT a European castle. Sand-gold sandstone walls with warm beige tones, a large vibrant TURQUOISE blue-green ceramic DOME (gumbaz) in the center, tall arched pointed portal gate (iwan/pishtaq) with subtle geometric tile ornament hints. Small corner towers with smaller turquoise domes. Clean readable silhouette, soft warm lighting, single compact structure, square footprint. No people, no flags, no text, isolated on plain background.",
+    "negativePrompt": "",
+    "model": "gemini-3.0-pro",
+    "modelName": "Gemini 3.0 Pro",
+    "customSeed": -1,
+    "w3CTraceId": "",
+    "feedback": 0,
+    "refinementMode": "Generation",
+    "pixelateTargetSize": 0,
+    "pixelateKeepImageSize": false,
+    "pixelatePixelBlockSize": 0,
+    "pixelatePixelGridSize": 0,
+    "pixelateMode": 0,
+    "pixelateOutlineThickness": 0,
+    "doodles": {
+        "m_Items": []
+    },
+    "upscaleFactor": 0,
+    "dimensions": {
+        "width": 1024,
+        "height": 1024
+    },
+    "spriteSheet": false,
+    "duration": 0.0,
+    "dynamicParams": {
+        "serializedData": []
+    }
+}

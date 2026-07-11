@@ -50,6 +50,10 @@ namespace KoG.IsoBase
                 cam.tag = "MainCamera";
             }
 
+            // Never fight Mini-MVP CoC elevated camera (would flatten to z=-10 side view).
+            if (cam.GetComponent("CoCCameraController") != null)
+                return;
+
             cam.orthographic = true;
             cam.orthographicSize = cameraSize;
             cam.transform.position = new Vector3(0f, 0f, -10f);

@@ -38,10 +38,12 @@ namespace KoG.MiniMvp.World
             _cachedCells = cells;
             var tex = CreateCombinedCheckerAndRim(cells, 16);
 
-            var shader = UrpMaterialUtil.FindUnlitShader();
-            if (shader == null) shader = Shader.Find("Unlit/Transparent");
-            if (shader == null) shader = Shader.Find("Sprites/Default");
-            if (shader == null) shader = UrpMaterialUtil.FindLitShader();
+            // Must support mainTexture — Unlit/Color ignores tex and paints solid white.
+            var shader = Shader.Find("Unlit/Transparent")
+                         ?? Shader.Find("Unlit/Texture")
+                         ?? Shader.Find("Sprites/Default")
+                         ?? UrpMaterialUtil.FindUnlitShader()
+                         ?? UrpMaterialUtil.FindLitShader();
 
             _combinedMat = new Material(shader);
             _combinedMat.name = "SoftFieldCombined_Mat";

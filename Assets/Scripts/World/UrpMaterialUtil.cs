@@ -117,11 +117,15 @@ namespace KoG.MiniMvp.World
                    ?? Shader.Find("Diffuse");
         }
 
+        /// <summary>
+        /// Texture-capable unlit first. Unlit/Color has no _MainTex → SoftField became solid white.
+        /// </summary>
         public static Shader FindUnlitShader()
         {
-            return Shader.Find("Unlit/Color")
+            return Shader.Find("Unlit/Transparent")
                    ?? Shader.Find("Unlit/Texture")
                    ?? Shader.Find("Sprites/Default")
+                   ?? Shader.Find("Unlit/Color")
                    ?? FindLitShader();
         }
     }

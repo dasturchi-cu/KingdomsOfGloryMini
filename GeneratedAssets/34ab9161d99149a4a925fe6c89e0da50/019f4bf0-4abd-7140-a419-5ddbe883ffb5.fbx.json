@@ -1,0 +1,23 @@
+{
+    "asset": "34ab9161d99149a4a925fe6c89e0da50",
+    "fileName": "019f4bf0-4abd-7140-a419-5ddbe883ffb5.fbx",
+    "prompt": "Low-poly stylized mobile base-builder castle, exact 1:1 copy of the reference image. Compact square stone fort: light-grey rectangular stone walls with crenellations, darker rough stone foundation at base, three towers with steep cobalt-blue tiled pyramid roofs, red pennant flags on gold finials, arched dark-brown wooden double door with stone steps, small white-plaster inner building with blue gabled roof, one wooden crate in the courtyard. Toy-like stylized 2.5D, clean silhouette, soft lighting, opaque materials. No characters, no text.",
+    "negativePrompt": "",
+    "model": "model3d-tripo-p1",
+    "modelName": "Tripo P1",
+    "customSeed": -1,
+    "w3CTraceId": "",
+    "feedback": 0,
+    "refinementMode": "Generation",
+    "promptImageReferenceGuid": "dc1d37d844d4281488e5d701c8631281",
+    "modelReferenceGuid": "",
+    "multiviewFrontGuid": "",
+    "multiviewBackGuid": "",
+    "multiviewLeftGuid": "",
+    "multiviewRightGuid": "",
+    "multiviewTopGuid": "",
+    "multiviewBottomGuid": "",
+    "multiviewLeftFrontGuid": "",
+    "multiviewRightFrontGuid": "",
+    "faceLimit": -1
+}

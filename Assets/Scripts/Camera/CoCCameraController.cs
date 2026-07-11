@@ -6,13 +6,17 @@ namespace KoG.MiniMvp.Camera
 {
     /// <summary>
     /// Clash of Clans / Might &amp; Glory style orthographic base camera.
+    /// Sole owner of Main Camera pose (pitch/yaw/distance/ortho). MiniMvpApp only calls Configure/FocusBase.
     /// Uses NEW Input System only (no UnityEngine.Input — avoids InvalidOperationException spam).
     /// </summary>
+    [DefaultExecutionOrder(-50)]
+    [DisallowMultipleComponent]
     public sealed class CoCCameraController : MonoBehaviour
     {
-        const float PitchDeg = 52f;
-        const float YawDeg = 45f;
-        const float CamDistance = 44f;
+        public const float PitchDeg = 52f;
+        public const float YawDeg = 45f;
+        public const float CamDistance = 44f;
+
         const float DragThresholdPx = 8f;
         const float MomentumDamping = 5.5f;
         const float PanSpeed = 0.024f;
@@ -20,6 +24,7 @@ namespace KoG.MiniMvp.Camera
         const float ScrollZoomSpeed = 1.35f;
         const float MinOrtho = 8f;
         const float MaxOrtho = 18f;
+        const float DefaultOrtho = 12f;
         const float UiBottomGuardPx = 190f;
         const float SoftClampStrength = 8f;
         const float EdgeRubber = 2.8f;
@@ -30,6 +35,7 @@ namespace KoG.MiniMvp.Camera
         Vector3 _focus;
         Vector3 _smoothTarget;
         bool _smoothing;
+        bool _configured;
         float _halfExtent = 12f;
         float _boundsPadding = 2.5f;
 
@@ -41,10 +47,11 @@ namespace KoG.MiniMvp.Camera
         float _lastPinchDist = -1f;
 
         public Vector3 Focus => _focus;
+        public bool IsConfigured => _configured;
 
         public float OrthoSize
         {
-            get => _cam != null ? _cam.orthographicSize : 10f;
+            get => _cam != null ? _cam.orthographicSize : DefaultOrtho;
             set
             {
                 if (_cam == null) return;
@@ -52,14 +59,35 @@ namespace KoG.MiniMvp.Camera
             }
         }
 
+        /// <summary>World position for an elevated CoC look-at <paramref name="focus"/>.</summary>
+        public static Vector3 PosePosition(Vector3 focus)
+        {
+            var rot = Quaternion.Euler(PitchDeg, YawDeg, 0f);
+            return focus - rot * Vector3.forward * CamDistance;
+        }
+
+        public static Quaternion PoseRotation() => Quaternion.Euler(PitchDeg, YawDeg, 0f);
+
         void Awake()
         {
-            _cam = GetComponent<UnityEngine.Camera>();
-            if (_cam == null) _cam = UnityEngine.Camera.main;
+            BindCamera();
+            // Ortho + elevated rotation only — do NOT snap focus to (0,0,0) before MiniMvpApp.Configure.
+            EnsureCameraPose(movePosition: false);
+            if (!_configured)
+                InferFocusFromCurrentPose();
+        }
+
+        void OnEnable()
+        {
+            BindCamera();
+            EnsureCameraPose(movePosition: false);
+            if (_configured)
+                ApplyTransform();
         }
 
         public void Configure(Vector3 fieldCenter, float fieldWorldSize, float boundsPadding = 2.5f)
         {
+            BindCamera();
             _fieldCenter = new Vector3(fieldCenter.x, 0f, fieldCenter.z);
             _focus = _fieldCenter;
             _smoothTarget = _focus;
@@ -67,19 +95,22 @@ namespace KoG.MiniMvp.Camera
             _halfExtent = Mathf.Max(fieldWorldSize * 0.5f, 4f);
             _boundsPadding = boundsPadding;
             _velocity = Vector3.zero;
-            EnsureCameraPose();
+            _configured = true;
+            EnsureCameraPose(movePosition: true);
             ApplyTransform();
         }
 
         public void FocusBase(Vector3 focus, float orthoSize)
         {
+            BindCamera();
             _focus = new Vector3(focus.x, 0f, focus.z);
             _smoothTarget = _focus;
             _smoothing = false;
             _velocity = Vector3.zero;
             OrthoSize = orthoSize;
             SoftClampFocus(hard: true);
-            EnsureCameraPose();
+            _configured = true;
+            EnsureCameraPose(movePosition: true);
             ApplyTransform();
         }
 
@@ -91,7 +122,7 @@ namespace KoG.MiniMvp.Camera
             if (orthoSize.HasValue) OrthoSize = orthoSize.Value;
         }
 
-        void Update()
+        void LateUpdate()
         {
             if (_cam == null) return;
             HandleTouch();
@@ -102,7 +133,28 @@ namespace KoG.MiniMvp.Camera
             ApplyTransform();
         }
 
-        void EnsureCameraPose()
+        void BindCamera()
+        {
+            if (_cam != null) return;
+            _cam = GetComponent<UnityEngine.Camera>();
+            if (_cam == null) _cam = UnityEngine.Camera.main;
+        }
+
+        /// <summary>
+        /// Before Configure, keep the scene-authored elevated pose by recovering focus from
+        /// position = focus - R * forward * distance.
+        /// </summary>
+        void InferFocusFromCurrentPose()
+        {
+            if (_cam == null) return;
+            var rot = PoseRotation();
+            _focus = _cam.transform.position + rot * Vector3.forward * CamDistance;
+            _focus.y = 0f;
+            _smoothTarget = _focus;
+            _fieldCenter = _focus;
+        }
+
+        void EnsureCameraPose(bool movePosition)
         {
             if (_cam == null) return;
             _cam.orthographic = true;
@@ -111,16 +163,22 @@ namespace KoG.MiniMvp.Camera
             _cam.clearFlags = CameraClearFlags.SolidColor;
             _cam.backgroundColor = new Color(0.52f, 0.74f, 0.92f);
             _cam.allowMSAA = true;
-            _cam.transform.rotation = Quaternion.Euler(PitchDeg, YawDeg, 0f);
-            OrthoSize = _cam.orthographicSize;
+            _cam.allowHDR = false;
+            _cam.transform.rotation = PoseRotation();
+            if (_cam.orthographicSize < MinOrtho || _cam.orthographicSize > MaxOrtho)
+                OrthoSize = DefaultOrtho;
+            else
+                OrthoSize = _cam.orthographicSize;
+            if (movePosition)
+                ApplyTransform();
         }
 
         void ApplyTransform()
         {
             if (_cam == null) return;
-            var rot = Quaternion.Euler(PitchDeg, YawDeg, 0f);
-            _cam.transform.rotation = rot;
-            _cam.transform.position = _focus - rot * Vector3.forward * CamDistance;
+            var rot = PoseRotation();
+            // World-space pose — camera must stay a root (or under identity parent).
+            _cam.transform.SetPositionAndRotation(PosePosition(_focus), rot);
         }
 
         void SoftClampFocus(bool hard)
@@ -170,7 +228,6 @@ namespace KoG.MiniMvp.Camera
                 return;
             }
 
-            // Collect active touches (pressed this frame or held).
             TouchControl t0 = null;
             TouchControl t1 = null;
             int count = 0;
@@ -253,7 +310,6 @@ namespace KoG.MiniMvp.Camera
 
         void HandleMouseEditor()
         {
-            // Real touch active — skip mouse (avoids double-handling on some devices).
             if (Touchscreen.current != null)
             {
                 foreach (var touch in Touchscreen.current.touches)
@@ -266,9 +322,9 @@ namespace KoG.MiniMvp.Camera
             var mouse = Mouse.current;
             if (mouse == null) return;
 
+            // Input System scroll is often large pixel deltas; ignore tiny noise that would auto-zoom.
             var scroll = mouse.scroll.ReadValue().y;
-            // Input System scroll is often in pixels; normalize roughly to old mouseScrollDelta feel.
-            if (Mathf.Abs(scroll) > 0.01f)
+            if (Mathf.Abs(scroll) > 2f)
             {
                 OrthoSize -= Mathf.Sign(scroll) * Mathf.Clamp(Mathf.Abs(scroll) * 0.01f, 0.1f, 3f) * ScrollZoomSpeed;
                 _velocity = Vector3.zero;
@@ -311,7 +367,7 @@ namespace KoG.MiniMvp.Camera
 
         void PanByScreenDelta(Vector2 screenDelta)
         {
-            var rot = Quaternion.Euler(PitchDeg, YawDeg, 0f);
+            var rot = PoseRotation();
             var right = rot * Vector3.right;
             var forward = Vector3.ProjectOnPlane(rot * Vector3.up, Vector3.up).normalized;
             if (forward.sqrMagnitude < 0.0001f)

@@ -106,7 +106,25 @@ namespace KoG.MiniMvp.App
             else
             {
                 SetScreen(UiScreen.Auth);
+                StartCoroutine(ProbeBackend());
             }
+        }
+
+        /// <summary>Auth ekranda backend o‘likligini darhol ko‘rsatadi (unknown error o‘rniga).</summary>
+        IEnumerator ProbeBackend()
+        {
+            yield return _api.GetJson("/health", null, (code, text) =>
+            {
+                if (_screen != UiScreen.Auth) return;
+                if (code >= 200 && code < 300)
+                {
+                    SetStatus("Backend OK (" + _api.BaseUrl + "). Guest Play bosing.");
+                    return;
+                }
+
+                SetStatus("Backend yo‘q: " + ExtractError(text) +
+                          " — terminalda `npm run dev` (http://127.0.0.1:3000)");
+            });
         }
 
         void EnsureHud()
@@ -205,15 +223,21 @@ namespace KoG.MiniMvp.App
             {
                 var go = roots[i];
                 if (go == null) continue;
-                // Scene-ga qo'lda tashlangan AI prefablar — runtime spawn bilan dublikat.
-                // Never destroy runtime-spawned buildings (BuildingMarker).
+                // Never destroy runtime-spawned buildings (BuildingMarker) or the live camera/light.
                 if (go.GetComponent<BuildingMarker>() != null) continue;
+                if (go.GetComponent<UnityEngine.Camera>() != null) continue;
+                if (go.GetComponent<Light>() != null && go.name.Contains("Directional")) continue;
+
                 var n = go.name;
+                // Scene leftovers fight the runtime Village (duplicate field/border + foreground trees).
                 if (n == "UzbekCastle" || n.StartsWith("UzbekCastle") ||
                     n == "Castle_L1" || n.StartsWith("Castle_L1") ||
                     n == "Castle" || n.StartsWith("Castle (") ||
                     n == "BaseField_L1" || n == "NatureBorder_L1" ||
-                    n == "BaseField" || n == "NatureBorder")
+                    n == "BaseField" || n == "NatureBorder" ||
+                    n == "Global Volume" || n == "Village" || n == "ReferenceVillage" ||
+                    n.StartsWith("SM_Env_") || n.StartsWith("SM_Prop_") ||
+                    n.StartsWith("Tree") || n.StartsWith("Rock"))
                 {
                     Debug.Log("[MiniMvp] Removing loose scene object: " + n);
                     Destroy(go);
@@ -225,6 +249,28 @@ namespace KoG.MiniMvp.App
         {
             _fieldRoot = FieldVisualBuilder.Build(gridSize, cellSize);
 
+            var cam = EnsureMainCamera();
+            _cocCamera = cam.GetComponent<CoCCameraController>();
+            if (_cocCamera == null) _cocCamera = cam.gameObject.AddComponent<CoCCameraController>();
+            if (cam.GetComponent<UnityEngine.EventSystems.PhysicsRaycaster>() == null)
+                cam.gameObject.AddComponent<UnityEngine.EventSystems.PhysicsRaycaster>();
+
+            // CoCCameraController owns pose; app only supplies field center + framing size.
+            _cocCamera.Configure(FieldCenter, FieldWorldSize, 5.5f);
+            _cocCamera.FocusBase(FieldCenter, FieldWorldSize * 0.55f);
+
+            BaseLightingSetup.Apply(FieldCenter);
+            FieldVisualBuilder.FinalizeHierarchy();
+
+            // Re-assert pose after hierarchy/lighting (no parent fight, focus never stuck at origin).
+            _cocCamera.FocusBase(FieldCenter, FieldWorldSize * 0.55f);
+
+            var village = GameObject.Find("Village");
+            MobileVillageOptimize.Apply(village != null ? village.transform : null, cam);
+        }
+
+        static UnityEngine.Camera EnsureMainCamera()
+        {
             var cam = UnityEngine.Camera.main;
             if (cam == null)
             {
@@ -233,17 +279,22 @@ namespace KoG.MiniMvp.App
                 cam.tag = "MainCamera";
             }
 
-            _cocCamera = cam.GetComponent<CoCCameraController>();
-            if (_cocCamera == null) _cocCamera = cam.gameObject.AddComponent<CoCCameraController>();
-            if (cam.GetComponent<UnityEngine.EventSystems.PhysicsRaycaster>() == null)
-                cam.gameObject.AddComponent<UnityEngine.EventSystems.PhysicsRaycaster>();
-            _cocCamera.Configure(FieldCenter, FieldWorldSize, 5.5f);
-            // Reference framing: full diamond + nature border, CoC / M&G feel.
-            _cocCamera.FocusBase(FieldCenter, FieldWorldSize * 0.55f);
-            BaseLightingSetup.Apply(FieldCenter);
-            FieldVisualBuilder.FinalizeHierarchy();
-            var village = GameObject.Find("Village");
-            MobileVillageOptimize.Apply(village != null ? village.transform : null, cam);
+            // Keep Main Camera as a scene root so world pose math stays unambiguous.
+            if (cam.transform.parent != null)
+                cam.transform.SetParent(null, true);
+
+            // Strip leftover URP camera extras if any (project is Built-in).
+            var behaviours = cam.GetComponents<Behaviour>();
+            for (var i = 0; i < behaviours.Length; i++)
+            {
+                var b = behaviours[i];
+                if (b == null) continue;
+                var tn = b.GetType().Name;
+                if (tn == "UniversalAdditionalCameraData" || tn == "Volume")
+                    Destroy(b);
+            }
+
+            return cam;
         }
 
 
@@ -366,6 +417,7 @@ namespace KoG.MiniMvp.App
 
                 var hasMine = false;
                 var hasBarracks = false;
+                var hasCastle = false;
                 var buildingCount = 0;
                 if (state.buildings != null)
                 {
@@ -373,10 +425,25 @@ namespace KoG.MiniMvp.App
                     {
                         buildingCount++;
                         SpawnBuilding(building.id, building.type, building.level, building.gridX, building.gridZ);
-                        if (building.type == "castle") _selectedBuildingId = building.id;
+                        if (building.type == "castle")
+                        {
+                            hasCastle = true;
+                            _selectedBuildingId = building.id;
+                        }
                         if (building.type == "gold_mine") hasMine = true;
                         if (building.type == "barracks") hasBarracks = true;
                     }
+                }
+
+                // Safety: empty base still shows a center castle so field never looks abandoned.
+                if (!hasCastle)
+                {
+                    var cx = gridSize / 2;
+                    var cz = gridSize / 2;
+                    SpawnBuilding("local_castle_fallback", "castle", 1, cx, cz);
+                    _selectedBuildingId = "local_castle_fallback";
+                    buildingCount++;
+                    Debug.LogWarning("[MiniMvp] Server castle missing — spawned center fallback");
                 }
 
                 SetStatus(BuildNextStepHint(hasMine, hasBarracks, buildingCount));
@@ -718,6 +785,20 @@ namespace KoG.MiniMvp.App
                 go = BuildingVisualFactory.Create(type, level, GridToWorld(gridX, gridZ));
             }
 
+            // Keep buildings under Village/Gameplay so scene cleanup never orphans them.
+            var gameplay = GameObject.Find("Village/Gameplay");
+            if (gameplay != null)
+            {
+                var folder = gameplay.transform.Find("Buildings");
+                if (folder == null)
+                {
+                    var folderGo = new GameObject("Buildings");
+                    folderGo.transform.SetParent(gameplay.transform, false);
+                    folder = folderGo.transform;
+                }
+                go.transform.SetParent(folder, true);
+            }
+
             var marker = go.GetComponent<BuildingMarker>();
             if (marker == null) marker = go.AddComponent<BuildingMarker>();
             marker.buildingId = id;
@@ -802,7 +883,8 @@ namespace KoG.MiniMvp.App
 
         static string ExtractError(string text)
         {
-            if (string.IsNullOrEmpty(text)) return "unknown error";
+            if (string.IsNullOrEmpty(text))
+                return "backend javob bermadi — `npm run dev` ishga tushiring (http://127.0.0.1:3000)";
             try
             {
                 var err = JsonUtility.FromJson<ApiError>(text);

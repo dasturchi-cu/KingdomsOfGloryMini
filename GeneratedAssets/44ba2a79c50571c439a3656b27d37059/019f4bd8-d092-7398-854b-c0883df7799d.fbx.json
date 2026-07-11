@@ -1,0 +1,23 @@
+{
+    "asset": "44ba2a79c50571c439a3656b27d37059",
+    "fileName": "019f4bd8-d092-7398-854b-c0883df7799d.fbx",
+    "prompt": "Low-poly stylized castle mesh, isometric 2.5D mobile game asset. Sand-gold stone, turquoise dome, Turkic/Uzbek style. Mobile-friendly topology, clean silhouette.",
+    "negativePrompt": "",
+    "model": "model3d-tripo-p1",
+    "modelName": "Tripo P1",
+    "customSeed": -1,
+    "w3CTraceId": "",
+    "feedback": 0,
+    "refinementMode": "Generation",
+    "promptImageReferenceGuid": "bb72d137d5f8bb44eae85dd1eb96df38",
+    "modelReferenceGuid": "",
+    "multiviewFrontGuid": "",
+    "multiviewBackGuid": "",
+    "multiviewLeftGuid": "",
+    "multiviewRightGuid": "",
+    "multiviewTopGuid": "",
+    "multiviewBottomGuid": "",
+    "multiviewLeftFrontGuid": "",
+    "multiviewRightFrontGuid": "",
+    "faceLimit": -1
+}

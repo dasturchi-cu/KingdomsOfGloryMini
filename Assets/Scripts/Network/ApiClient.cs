@@ -13,6 +13,8 @@ namespace KoG.MiniMvp.Network
     {
         readonly string _baseUrl;
 
+        public string BaseUrl => _baseUrl;
+
         public ApiClient(string baseUrl)
         {
             _baseUrl = (baseUrl ?? "http://127.0.0.1:3000").TrimEnd('/');
@@ -42,7 +44,7 @@ namespace KoG.MiniMvp.Network
                 }
 
                 yield return request.SendWebRequest();
-                onDone?.Invoke(request.responseCode, request.downloadHandler?.text ?? string.Empty);
+                onDone?.Invoke(request.responseCode, FormatBody(request));
             }
         }
 
@@ -57,8 +59,31 @@ namespace KoG.MiniMvp.Network
                 }
 
                 yield return request.SendWebRequest();
-                onDone?.Invoke(request.responseCode, request.downloadHandler?.text ?? string.Empty);
+                onDone?.Invoke(request.responseCode, FormatBody(request));
             }
+        }
+
+        /// <summary>Empty download + transport failure → actionable text (not blank "unknown error").</summary>
+        static string FormatBody(UnityWebRequest request)
+        {
+            var text = request.downloadHandler != null ? request.downloadHandler.text : null;
+            if (!string.IsNullOrEmpty(text)) return text;
+
+            if (request.result == UnityWebRequest.Result.ConnectionError ||
+                request.result == UnityWebRequest.Result.DataProcessingError ||
+                request.responseCode == 0)
+            {
+                var detail = string.IsNullOrEmpty(request.error) ? "connection failed" : request.error;
+                return "{\"error\":\"backend_unreachable\",\"message\":\"Backend ishlamayapti (" + detail +
+                       "). Terminalda: npm run dev\"}";
+            }
+
+            if (request.result == UnityWebRequest.Result.ProtocolError)
+            {
+                return "{\"error\":\"http_error\",\"message\":\"HTTP " + request.responseCode + "\"}";
+            }
+
+            return string.Empty;
         }
 
         public static string NewIdempotencyKey()

@@ -30,8 +30,10 @@ namespace KoG.MiniMvp.World
             {
                 var go = roots[i];
                 if (go == null) continue;
-                if (go.name == "Ground" || go.name == "Plane" || go.name == "BaseField" ||
-                    go.name == "Village" || go.name == "ReferenceVillage")
+                var n = go.name;
+                if (n == "Ground" || n == "Plane" || n == "BaseField" || n == "BaseField_L1" ||
+                    n == "Village" || n == "ReferenceVillage" || n == "NatureBorder" ||
+                    n == "NatureBorder_L1" || n.StartsWith("SM_Env_") || n.StartsWith("SM_Prop_"))
                     Object.Destroy(go);
             }
         }
@@ -123,19 +125,19 @@ namespace KoG.MiniMvp.World
             return fieldRoot;
         }
 
-        /// <summary>Call after camera + KoG_Sun exist — clean Village hierarchy.</summary>
+        /// <summary>
+        /// Call after KoG_Sun exists — tidy Village lighting only.
+        /// Main Camera stays a scene root; CoCCameraController owns its world pose.
+        /// </summary>
         public static void FinalizeHierarchy()
         {
             var village = GameObject.Find("Village");
             if (village == null) return;
 
-            var camNode = village.transform.Find("Camera");
-            if (camNode == null)
-            {
-                var go = new GameObject("Camera");
-                go.transform.SetParent(village.transform, false);
-                camNode = go.transform;
-            }
+            // Do NOT parent Main Camera under Village — that fought CoC pose / edit-vs-play consistency.
+            var staleCamNode = village.transform.Find("Camera");
+            if (staleCamNode != null && staleCamNode.childCount == 0)
+                Object.Destroy(staleCamNode.gameObject);
 
             var lightNode = village.transform.Find("Lighting");
             if (lightNode == null)
@@ -144,10 +146,6 @@ namespace KoG.MiniMvp.World
                 go.transform.SetParent(village.transform, false);
                 lightNode = go.transform;
             }
-
-            var cam = UnityEngine.Camera.main;
-            if (cam != null && (cam.transform.parent == null || cam.transform.parent.name != "Camera"))
-                cam.transform.SetParent(camNode, true);
 
             var sun = GameObject.Find("KoG_Sun");
             if (sun != null && (sun.transform.parent == null || sun.transform.parent.name != "Lighting"))

@@ -57,4 +57,4 @@ Yangi isometric base-building yoâ€˜li: **`Assets/Scripts/IsoBase/`**.
 
 ## Render Pipeline
 
-**Built-in (Standard)** — URP o‘chirilgan (Polygon assetlar pushti bo‘lmasin).
+**Built-in (Standard)** ï¿½ URP oï¿½chirilgan (Polygon assetlar pushti boï¿½lmasin).

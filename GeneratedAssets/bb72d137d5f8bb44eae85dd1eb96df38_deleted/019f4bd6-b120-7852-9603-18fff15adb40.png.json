@@ -1,0 +1,41 @@
+{
+    "asset": "bb72d137d5f8bb44eae85dd1eb96df38",
+    "fileName": "019f4bd6-b120-7852-9603-18fff15adb40.png",
+    "prompt": "Low-poly stylized mobile game castle, 2.5D isometric view, Clash of Clans toy-like art style. Turkic/Uzbek architecture: sand-gold stone walls, vibrant turquoise simple dome, arched gate with subtle felt-pattern carvings. Clean silhouette, single structure suitable for 1x1 grid cell. Vibrant lighting, soft shadows. No people, no text.",
+    "negativePrompt": "",
+    "model": "gemini-3.0-pro",
+    "modelName": "Gemini 3.0 Pro",
+    "customSeed": -1,
+    "w3CTraceId": "",
+    "feedback": 0,
+    "refinementMode": "Generation",
+    "pixelateTargetSize": 0,
+    "pixelateKeepImageSize": false,
+    "pixelatePixelBlockSize": 0,
+    "pixelatePixelGridSize": 0,
+    "pixelateMode": 0,
+    "pixelateOutlineThickness": 0,
+    "doodles": {
+        "m_Items": [
+            {
+                "doodleReferenceType": 7,
+                "doodle": [],
+                "label": "Image",
+                "strength": 0.25,
+                "invertStrength": false,
+                "assetReferenceGuid": "12cd409993ddaef46a25e769cef06520",
+                "unlabeledIndex": -1
+            }
+        ]
+    },
+    "upscaleFactor": 0,
+    "dimensions": {
+        "width": 1024,
+        "height": 1024
+    },
+    "spriteSheet": false,
+    "duration": 0.0,
+    "dynamicParams": {
+        "serializedData": []
+    }
+}
