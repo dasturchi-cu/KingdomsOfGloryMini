@@ -1,0 +1,43 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 38f250f6d6bfa0f44b096faeb7c3c5d0, type: 3}
+  m_Name: Troop_Barbarian
+  m_EditorClassIdentifier: Assembly-CSharp::KoG.MiniMvp.Troops.TroopDefinition
+  Id: barbarian
+  DisplayName: Barbarian
+  Stats:
+    MaxHealth: 100
+    Armor: 5
+    AttackDamage: 12
+    AttackIntervalSeconds: 0.85
+    AttackSpeed: 1
+    AttackRange: 1.35
+    AcquireRange: 6
+    CritChance: 0.08
+    CritMultiplier: 1.75
+    ArmorPenetration: 0
+    MoveSpeed: 3.2
+    TurnSpeedDegrees: 540
+    SelectionRadius: 0.55
+    HousingSpace: 1
+    UseProjectile: 0
+  Prefab: {fileID: 0}
+  Projectile: {fileID: 0}
+  OnHitStatus: {fileID: 0}
+  IdleState: Idle
+  MoveState: Move
+  AttackState: Attack
+  DeathState: Death
+  PoolPrewarm: 10
+  PoolMax: 40
+  CastShadows: 0
+  Tint: {r: 0.82, g: 0.55, b: 0.28, a: 1}
