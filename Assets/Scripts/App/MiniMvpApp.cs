@@ -272,10 +272,67 @@ namespace KoG.MiniMvp.App
                 StartCoroutine(Login());
             };
             _hud.OnGuest = () => StartCoroutine(GuestLogin());
-            _hud.OnClan = () => StartCoroutine(_social.CreateClan());
-            _hud.OnChat = () => StartCoroutine(_social.SendGlobalChat());
-            _hud.OnPvp = () => StartCoroutine(_social.FindPvp());
-            _hud.OnTournament = () => StartCoroutine(_social.JoinTournament());
+            _hud.OnClan = null;
+            _hud.OnChat = null;
+            _hud.OnPvp = null;
+            _hud.OnTournament = null;
+            _hud.OnOpenClan = () =>
+            {
+                _hud.ShowClanSheet(true);
+                StartCoroutine(_social.RefreshMyClan(summary =>
+                {
+                    if (_hud != null) _hud.SetClanRoster(summary);
+                }));
+            };
+            _hud.OnClanCreate = () => StartCoroutine(ClanCreateAndRefresh());
+            _hud.OnClanJoin = () => StartCoroutine(ClanJoinAndRefresh());
+            _hud.OnClanLeave = () => StartCoroutine(ClanLeaveAndRefresh());
+            _hud.OnClanRefresh = () => StartCoroutine(_social.RefreshMyClan(summary =>
+            {
+                if (_hud != null) _hud.SetClanRoster(summary);
+            }));
+            _hud.OnOpenChat = () =>
+            {
+                _hud.ShowChatSheet(true);
+                StartCoroutine(_social.RefreshChatHistory(summary =>
+                {
+                    if (_hud != null) _hud.SetChatHistory(summary);
+                }));
+            };
+            _hud.OnChatSend = () => StartCoroutine(ChatSendAndRefresh());
+            _hud.OnChatRefresh = () => StartCoroutine(_social.RefreshChatHistory(summary =>
+            {
+                if (_hud != null) _hud.SetChatHistory(summary);
+            }));
+            _hud.OnOpenPvp = () =>
+            {
+                _hud.ShowPvpSheet(true);
+                _hud.SetPvpResult("Jang yoki Qayta bosing.");
+            };
+            _hud.OnPvpFight = () => StartCoroutine(_social.FindPvpWithResult(summary =>
+            {
+                if (_hud != null) _hud.SetPvpResult(summary);
+            }));
+            _hud.OnPvpRematch = () => StartCoroutine(_social.FindPvpWithResult(summary =>
+            {
+                if (_hud != null) _hud.SetPvpResult(summary);
+            }));
+            _hud.OnOpenTournament = () =>
+            {
+                _hud.ShowTournamentSheet(true);
+                StartCoroutine(_social.RefreshTournamentBracket(summary =>
+                {
+                    if (_hud != null) _hud.SetTournamentBracket(summary);
+                }));
+            };
+            _hud.OnTournamentJoin = () => StartCoroutine(_social.RefreshTournamentBracket(summary =>
+            {
+                if (_hud != null) _hud.SetTournamentBracket(summary);
+            }));
+            _hud.OnTournamentRefresh = () => StartCoroutine(_social.RefreshTournamentBracket(summary =>
+            {
+                if (_hud != null) _hud.SetTournamentBracket(summary);
+            }));
             _hud.OnRewardedAd = () => StartCoroutine(_social.ClaimRewardedAd((g, m, d) =>
             {
                 if (g > 0) _gold = g;
@@ -978,6 +1035,56 @@ namespace KoG.MiniMvp.App
                 _hud.SetAchievements(_achievements);
                 _hud.ShowAchievementsSheet(true);
             }
+        }
+
+        IEnumerator ClanCreateAndRefresh()
+        {
+            yield return _social.CreateClan();
+            yield return _social.RefreshMyClan(summary =>
+            {
+                if (_hud != null)
+                {
+                    _hud.SetClanRoster(summary);
+                    _hud.ShowClanSheet(true);
+                }
+            });
+        }
+
+        IEnumerator ClanJoinAndRefresh()
+        {
+            var id = _hud != null ? _hud.ClanJoinId : "";
+            yield return _social.JoinClan(id);
+            yield return _social.RefreshMyClan(summary =>
+            {
+                if (_hud != null)
+                {
+                    _hud.SetClanRoster(summary);
+                    _hud.ShowClanSheet(true);
+                }
+            });
+        }
+
+        IEnumerator ClanLeaveAndRefresh()
+        {
+            yield return _social.LeaveClan();
+            if (_hud != null)
+            {
+                _hud.SetClanRoster("Klan yo‘q — Yaratish yoki ID bilan qo‘shiling");
+                _hud.ShowClanSheet(true);
+            }
+        }
+
+        IEnumerator ChatSendAndRefresh()
+        {
+            yield return _social.SendGlobalChat();
+            yield return _social.RefreshChatHistory(summary =>
+            {
+                if (_hud != null)
+                {
+                    _hud.SetChatHistory(summary);
+                    _hud.ShowChatSheet(true);
+                }
+            });
         }
 
         IEnumerator WaitTrainingThenReload(int seconds)

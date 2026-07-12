@@ -77,7 +77,131 @@ namespace KoG.MiniMvp.App
                 yield break;
             }
 
-            // Minimum depth: show roster.
+            yield return LoadClanRosterStatus();
+        }
+
+        public IEnumerator JoinClan(string clanId)
+        {
+            if (_api == null || !SessionStore.HasSession)
+            {
+                _setStatus?.Invoke("Avval Guest/Login qiling");
+                yield break;
+            }
+
+            var id = (clanId ?? "").Trim();
+            if (string.IsNullOrEmpty(id))
+            {
+                _setStatus?.Invoke("Klan ID kiriting");
+                yield break;
+            }
+
+            _setBusy?.Invoke(true);
+            _setStatus?.Invoke("Klanga qo‘shilmoqda...");
+            var body = Json(
+                ("playerId", SessionStore.PlayerId),
+                ("clanId", id)
+            );
+            var ok = false;
+            yield return _api.PostJson(
+                "/api/v1/clan/join",
+                body,
+                SessionStore.Token,
+                null,
+                (code, text) =>
+                {
+                    if (code < 200 || code >= 300)
+                    {
+                        _setBusy?.Invoke(false);
+                        _setStatus?.Invoke("Join xato: " + _extractError(text));
+                        return;
+                    }
+
+                    ok = true;
+                    _clanId = id;
+                });
+
+            if (!ok) yield break;
+            yield return LoadClanRosterStatus();
+        }
+
+        public IEnumerator LeaveClan()
+        {
+            if (_api == null || !SessionStore.HasSession)
+            {
+                _setStatus?.Invoke("Avval Guest/Login qiling");
+                yield break;
+            }
+
+            _setBusy?.Invoke(true);
+            _setStatus?.Invoke("Klandan chiqilmoqda...");
+            var body = Json(("playerId", SessionStore.PlayerId));
+            yield return _api.PostJson(
+                "/api/v1/clan/leave",
+                body,
+                SessionStore.Token,
+                null,
+                (code, text) =>
+                {
+                    _setBusy?.Invoke(false);
+                    if (code < 200 || code >= 300)
+                    {
+                        _setStatus?.Invoke("Chiqish xato: " + _extractError(text));
+                        return;
+                    }
+
+                    _clanId = "";
+                    _setStatus?.Invoke("Klandan chiqdingiz");
+                });
+        }
+
+        public IEnumerator RefreshMyClan(Action<string> onSummary = null)
+        {
+            if (_api == null || !SessionStore.HasSession)
+            {
+                _setStatus?.Invoke("Avval Guest/Login qiling");
+                yield break;
+            }
+
+            _setBusy?.Invoke(true);
+            string text = null;
+            long code = 0;
+            yield return _api.GetJson(
+                "/api/v1/clan/mine?playerId=" + SessionStore.PlayerId,
+                SessionStore.Token,
+                (c, t) => { code = c; text = t; });
+
+            _setBusy?.Invoke(false);
+            if (code < 200 || code >= 300)
+            {
+                var err = "Klan: " + _extractError(text);
+                _setStatus?.Invoke(err);
+                onSummary?.Invoke(err);
+                yield break;
+            }
+
+            var clanId = ReadNestedString(text, "clan", "id");
+            var clanName = ReadNestedString(text, "clan", "name");
+            if (string.IsNullOrEmpty(clanId))
+            {
+                _clanId = "";
+                var empty = "Klan yo‘q — Yaratish yoki ID bilan qo‘shiling";
+                _setStatus?.Invoke(empty);
+                onSummary?.Invoke(empty);
+                yield break;
+            }
+
+            _clanId = clanId;
+            var nicks = ExtractNicknames(text, 12);
+            var summary = "Klan: " + (string.IsNullOrEmpty(clanName) ? clanId : clanName) +
+                          "\nID: " + clanId +
+                          "\nA’zolar (" + nicks.Count + "): " +
+                          (nicks.Count > 0 ? string.Join(", ", nicks) : "—");
+            _setStatus?.Invoke("Klan: " + (string.IsNullOrEmpty(clanName) ? clanId.Substring(0, Math.Min(8, clanId.Length)) : clanName));
+            onSummary?.Invoke(summary);
+        }
+
+        IEnumerator LoadClanRosterStatus()
+        {
             string membersText = null;
             long membersCode = 0;
             yield return _api.GetJson(
@@ -92,10 +216,14 @@ namespace KoG.MiniMvp.App
             _setBusy?.Invoke(false);
             if (membersCode >= 200 && membersCode < 300)
             {
-                var nicknames = ExtractNicknames(membersText, 5);
+                var nicknames = ExtractNicknames(membersText, 8);
                 _setStatus?.Invoke(
                     "Klan OK · a’zolar " + nicknames.Count +
                     (nicknames.Count > 0 ? ": " + string.Join(", ", nicknames) : ""));
+            }
+            else
+            {
+                _setStatus?.Invoke("Klan OK · ID " + (_clanId.Length > 8 ? _clanId.Substring(0, 8) : _clanId));
             }
         }
 
@@ -156,7 +284,48 @@ namespace KoG.MiniMvp.App
             }
         }
 
+        public IEnumerator RefreshChatHistory(Action<string> onSummary = null)
+        {
+            if (_api == null || !SessionStore.HasSession)
+            {
+                _setStatus?.Invoke("Avval Guest/Login qiling");
+                yield break;
+            }
+
+            _setBusy?.Invoke(true);
+            string histText = null;
+            long histCode = 0;
+            yield return _api.GetJson(
+                "/api/v1/chat/history?channelType=global&limit=20",
+                SessionStore.Token, (code, text) =>
+            {
+                histCode = code;
+                histText = text;
+            });
+            _setBusy?.Invoke(false);
+
+            if (histCode < 200 || histCode >= 300)
+            {
+                var err = "Chat: " + _extractError(histText);
+                _setStatus?.Invoke(err);
+                onSummary?.Invoke(err);
+                yield break;
+            }
+
+            var lines = ExtractChatBodies(histText, 12);
+            var summary = lines.Count > 0
+                ? string.Join("\n", lines)
+                : "Chat bo‘sh — Yuborish bosing";
+            _setStatus?.Invoke("Chat · " + lines.Count + " xabar");
+            onSummary?.Invoke(summary);
+        }
+
         public IEnumerator FindPvp()
+        {
+            yield return FindPvpWithResult(null);
+        }
+
+        public IEnumerator FindPvpWithResult(Action<string> onSummary)
         {
             if (_api == null || !SessionStore.HasSession)
             {
@@ -177,7 +346,9 @@ namespace KoG.MiniMvp.App
                     _setBusy?.Invoke(false);
                     if (code < 200 || code >= 300)
                     {
-                        _setStatus?.Invoke("Live PvP xato: " + _extractError(text));
+                        var err = "Live PvP xato: " + _extractError(text);
+                        _setStatus?.Invoke(err);
+                        onSummary?.Invoke(err);
                         return;
                     }
 
@@ -195,15 +366,21 @@ namespace KoG.MiniMvp.App
                         || text.IndexOf("\"won\":true", StringComparison.Ordinal) >= 0
                         || (!string.IsNullOrEmpty(stars) && stars != "0"));
                     var outcome = won ? "G‘alaba" : "Natija";
-                    _setStatus?.Invoke(
-                        "PvP " + outcome + " vs " + nick +
-                        (string.IsNullOrEmpty(stars) ? "" : " · ★" + stars) +
-                        (string.IsNullOrEmpty(lootG) ? "" : " · +" + lootG + "●") +
-                        (string.IsNullOrEmpty(lootM) ? "" : " +" + lootM + "◆"));
+                    var line = "PvP " + outcome + " vs " + nick +
+                               (string.IsNullOrEmpty(stars) ? "" : " · ★" + stars) +
+                               (string.IsNullOrEmpty(lootG) ? "" : " · +" + lootG + "●") +
+                               (string.IsNullOrEmpty(lootM) ? "" : " +" + lootM + "◆");
+                    _setStatus?.Invoke(line);
+                    onSummary?.Invoke(line + "\n\nQayta — yana practice jang.");
                 });
         }
 
         public IEnumerator JoinTournament()
+        {
+            yield return RefreshTournamentBracket(null);
+        }
+
+        public IEnumerator RefreshTournamentBracket(Action<string> onSummary)
         {
             if (_api == null || !SessionStore.HasSession)
             {
@@ -230,7 +407,9 @@ namespace KoG.MiniMvp.App
             if (ensureCode < 200 || ensureCode >= 300)
             {
                 _setBusy?.Invoke(false);
-                _setStatus?.Invoke("Turnir ensure failed: " + _extractError(ensureText));
+                var err = "Turnir ensure failed: " + _extractError(ensureText);
+                _setStatus?.Invoke(err);
+                onSummary?.Invoke(err);
                 yield break;
             }
 
@@ -250,7 +429,9 @@ namespace KoG.MiniMvp.App
                     if (code < 200 || code >= 300)
                     {
                         _setBusy?.Invoke(false);
-                        _setStatus?.Invoke("Turnir join xato: " + _extractError(text));
+                        var err = "Turnir join xato: " + _extractError(text);
+                        _setStatus?.Invoke(err);
+                        onSummary?.Invoke(err);
                         return;
                     }
 
@@ -264,10 +445,7 @@ namespace KoG.MiniMvp.App
                 "{}",
                 SessionStore.Token,
                 null,
-                (code, text) =>
-                {
-                    // continue to GET bracket either way
-                });
+                (code, text) => { });
 
             string bracketText = null;
             long bracketCode = 0;
@@ -287,14 +465,19 @@ namespace KoG.MiniMvp.App
                 var size = ReadNestedString(bracketText, "bracket", "bracketSize");
                 if (string.IsNullOrEmpty(size)) size = ReadString(bracketText, "bracketSize");
                 var matchCount = CountOccurrences(bracketText, "\"matchId\"");
-                _setStatus?.Invoke(
-                    "Turnir " + shortId + " · bracket " +
-                    (string.IsNullOrEmpty(size) ? "?" : size) +
-                    " · match " + matchCount);
+                var line = "Turnir " + shortId + " · bracket " +
+                           (string.IsNullOrEmpty(size) ? "?" : size) +
+                           " · match " + matchCount;
+                var detail = line + "\n\nMatchlar: " + matchCount +
+                             "\n(Soft-test: ro‘yxat/counts; to‘liq daraxt keyinroq)";
+                _setStatus?.Invoke(line);
+                onSummary?.Invoke(detail);
             }
             else
             {
-                _setStatus?.Invoke("Turnir OK (" + shortId + "). Bracket hali yo‘q (2+ o‘yinchi kerak).");
+                var msg = "Turnir OK (" + shortId + "). Bracket hali yo‘q (2+ o‘yinchi kerak).";
+                _setStatus?.Invoke(msg);
+                onSummary?.Invoke(msg);
             }
         }
 

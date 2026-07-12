@@ -34,8 +34,17 @@ namespace KoG.MiniMvp.UI
         GameObject _errorBanner;
         GameObject _socialSheet;
         GameObject _achievementsSheet;
+        GameObject _clanSheet;
+        GameObject _chatSheet;
+        GameObject _pvpSheet;
+        GameObject _tournamentSheet;
         Text[] _achievementProgressLabels;
         Button[] _achievementClaimButtons;
+        Text _clanRosterLabel;
+        Text _chatHistoryLabel;
+        Text _pvpResultLabel;
+        Text _tournamentBracketLabel;
+        InputField _clanJoinField;
         Text _resultBody;
         Text _resultStars;
         Text _resultLoot;
@@ -75,6 +84,22 @@ namespace KoG.MiniMvp.UI
         public Action OnRetryLoad;
         public Action OnOpenAchievements;
         public Action<string> OnClaimAchievement;
+        public Action OnOpenClan;
+        public Action OnClanCreate;
+        public Action OnClanJoin;
+        public Action OnClanLeave;
+        public Action OnClanRefresh;
+        public Action OnOpenChat;
+        public Action OnChatSend;
+        public Action OnChatRefresh;
+        public Action OnOpenPvp;
+        public Action OnPvpFight;
+        public Action OnPvpRematch;
+        public Action OnOpenTournament;
+        public Action OnTournamentJoin;
+        public Action OnTournamentRefresh;
+
+        public string ClanJoinId => _clanJoinField != null ? (_clanJoinField.text ?? "").Trim() : "";
 
         GameObject _placementBar;
         GameObject _buildActionBar;
@@ -105,6 +130,10 @@ namespace KoG.MiniMvp.UI
             ClearError();
             ShowSocialSheet(false);
             ShowAchievementsSheet(false);
+            ShowClanSheet(false);
+            ShowChatSheet(false);
+            ShowPvpSheet(false);
+            ShowTournamentSheet(false);
         }
 
         public void SetBusy(bool busy)
@@ -238,8 +267,7 @@ namespace KoG.MiniMvp.UI
             if (_authRoot != null) _authRoot.SetActive(visible);
             if (visible)
             {
-                ShowSocialSheet(false);
-                ShowAchievementsSheet(false);
+                CloseAllOverlaySheets();
             }
         }
 
@@ -248,8 +276,7 @@ namespace KoG.MiniMvp.UI
             if (_gameRoot != null) _gameRoot.SetActive(visible);
             if (!visible)
             {
-                ShowSocialSheet(false);
-                ShowAchievementsSheet(false);
+                CloseAllOverlaySheets();
             }
         }
 
@@ -258,8 +285,7 @@ namespace KoG.MiniMvp.UI
             if (_resultRoot != null) _resultRoot.SetActive(visible);
             if (visible)
             {
-                ShowSocialSheet(false);
-                ShowAchievementsSheet(false);
+                CloseAllOverlaySheets();
             }
         }
 
@@ -276,16 +302,112 @@ namespace KoG.MiniMvp.UI
                 _resultLoot.text = lootGold > 0 ? "+ " + lootGold + " ●" : "Loot 0";
         }
 
+        void CloseAllOverlaySheets()
+        {
+            ShowSocialSheet(false);
+            ShowAchievementsSheet(false);
+            ShowClanSheet(false);
+            ShowChatSheet(false);
+            ShowPvpSheet(false);
+            ShowTournamentSheet(false);
+        }
+
         void ShowSocialSheet(bool visible)
         {
-            if (visible) ShowAchievementsSheet(false);
+            if (visible)
+            {
+                ShowAchievementsSheet(false);
+                ShowClanSheet(false);
+                ShowChatSheet(false);
+                ShowPvpSheet(false);
+                ShowTournamentSheet(false);
+            }
             if (_socialSheet != null) _socialSheet.SetActive(visible);
         }
 
         public void ShowAchievementsSheet(bool visible)
         {
-            if (visible) ShowSocialSheet(false);
+            if (visible)
+            {
+                if (_socialSheet != null) _socialSheet.SetActive(false);
+                ShowClanSheet(false);
+                ShowChatSheet(false);
+                ShowPvpSheet(false);
+                ShowTournamentSheet(false);
+            }
             if (_achievementsSheet != null) _achievementsSheet.SetActive(visible);
+        }
+
+        public void ShowClanSheet(bool visible)
+        {
+            if (visible)
+            {
+                if (_socialSheet != null) _socialSheet.SetActive(false);
+                ShowAchievementsSheet(false);
+                ShowChatSheet(false);
+                ShowPvpSheet(false);
+                ShowTournamentSheet(false);
+            }
+            if (_clanSheet != null) _clanSheet.SetActive(visible);
+        }
+
+        public void ShowChatSheet(bool visible)
+        {
+            if (visible)
+            {
+                if (_socialSheet != null) _socialSheet.SetActive(false);
+                ShowAchievementsSheet(false);
+                ShowClanSheet(false);
+                ShowPvpSheet(false);
+                ShowTournamentSheet(false);
+            }
+            if (_chatSheet != null) _chatSheet.SetActive(visible);
+        }
+
+        public void ShowPvpSheet(bool visible)
+        {
+            if (visible)
+            {
+                if (_socialSheet != null) _socialSheet.SetActive(false);
+                ShowAchievementsSheet(false);
+                ShowClanSheet(false);
+                ShowChatSheet(false);
+                ShowTournamentSheet(false);
+            }
+            if (_pvpSheet != null) _pvpSheet.SetActive(visible);
+        }
+
+        public void ShowTournamentSheet(bool visible)
+        {
+            if (visible)
+            {
+                if (_socialSheet != null) _socialSheet.SetActive(false);
+                ShowAchievementsSheet(false);
+                ShowClanSheet(false);
+                ShowChatSheet(false);
+                ShowPvpSheet(false);
+            }
+            if (_tournamentSheet != null) _tournamentSheet.SetActive(visible);
+        }
+
+        public void SetClanRoster(string text)
+        {
+            if (_clanRosterLabel != null) _clanRosterLabel.text = text ?? "";
+        }
+
+        public void SetChatHistory(string text)
+        {
+            if (_chatHistoryLabel != null) _chatHistoryLabel.text = text ?? "";
+        }
+
+        public void SetPvpResult(string text)
+        {
+            if (_pvpResultLabel != null) _pvpResultLabel.text = text ?? "";
+        }
+
+        public void SetTournamentBracket(string text)
+        {
+            if (_tournamentBracketLabel != null) _tournamentBracketLabel.text = text ?? "";
         }
 
         /// <summary>Bind soft-test achievement rows (order: train_troops, place_mine, first_raid).</summary>
@@ -414,6 +536,10 @@ namespace KoG.MiniMvp.UI
             BuildGameBar(root);
             BuildSocialSheet(root);
             BuildAchievementsSheet(root);
+            BuildClanSheet(root);
+            BuildChatSheet(root);
+            BuildPvpSheet(root);
+            BuildTournamentSheet(root);
             BuildResultPanel(root);
             BuildBusyOverlay(root);
         }
@@ -604,15 +730,15 @@ namespace KoG.MiniMvp.UI
             const float btnH = 52f;
             var x = -320f;
             MakeBtn(sheet, "Clan", "Klan", ref x, 80f, bw, gap, btnH,
-                new Color(0.34f, 0.28f, 0.52f), () => { ShowSocialSheet(false); Safe(OnClan); });
+                new Color(0.34f, 0.28f, 0.52f), () => { ShowSocialSheet(false); Safe(OnOpenClan); });
             MakeBtn(sheet, "Chat", "Chat", ref x, 80f, bw, gap, btnH,
-                new Color(0.16f, 0.40f, 0.46f), () => { ShowSocialSheet(false); Safe(OnChat); });
+                new Color(0.16f, 0.40f, 0.46f), () => { ShowSocialSheet(false); Safe(OnOpenChat); });
             MakeBtn(sheet, "Pvp", "PvP", ref x, 80f, bw, gap, btnH,
-                new Color(0.52f, 0.16f, 0.26f), () => { ShowSocialSheet(false); Safe(OnPvp); });
+                new Color(0.52f, 0.16f, 0.26f), () => { ShowSocialSheet(false); Safe(OnOpenPvp); });
 
             x = -320f;
             MakeBtn(sheet, "Cup", "Turnir", ref x, 10f, bw, gap, btnH,
-                new Color(0.52f, 0.40f, 0.12f), () => { ShowSocialSheet(false); Safe(OnTournament); });
+                new Color(0.52f, 0.40f, 0.12f), () => { ShowSocialSheet(false); Safe(OnOpenTournament); });
             MakeBtn(sheet, "Ad", "Reklama 📺", ref x, 10f, bw, gap, btnH,
                 new Color(0.46f, 0.32f, 0.12f), () => { ShowSocialSheet(false); Safe(OnRewardedAd); });
             MakeBtn(sheet, "Save", "Saqlash", ref x, 10f, bw, gap, btnH,
@@ -687,6 +813,160 @@ namespace KoG.MiniMvp.UI
                 new Color(0.22f, 0.24f, 0.28f), () => ShowAchievementsSheet(false));
 
             _achievementsSheet.SetActive(false);
+        }
+
+        void BuildClanSheet(Transform root)
+        {
+            var dim = Panel(root, "ClanDim",
+                new Vector2(0f, 0f), new Vector2(1f, 1f),
+                Vector2.zero, Vector2.zero,
+                new Color(0.02f, 0.03f, 0.05f, 0.55f));
+            dim.offsetMin = Vector2.zero;
+            dim.offsetMax = Vector2.zero;
+            _clanSheet = dim.gameObject;
+            var dimBtn = _clanSheet.AddComponent<Button>();
+            dimBtn.transition = Selectable.Transition.None;
+            dimBtn.onClick.AddListener(() => ShowClanSheet(false));
+
+            var sheet = Panel(dim, "ClanSheet",
+                new Vector2(0.5f, 0f), new Vector2(0.5f, 0f),
+                new Vector2(0f, 220f), new Vector2(720f, 460f),
+                new Color(0.06f, 0.08f, 0.12f, 0.98f));
+
+            Label(sheet, "ClanTitle", "Klan", 24, TextAnchor.UpperLeft,
+                new Vector2(28f, -20f), new Vector2(400f, 32f), new Color(1f, 0.9f, 0.55f));
+            _clanJoinField = Field(sheet, "Klan ID", "", new Vector2(28f, -70f), false);
+            var joinRt = _clanJoinField.GetComponent<RectTransform>();
+            joinRt.sizeDelta = new Vector2(660f, 48f);
+
+            _clanRosterLabel = Label(sheet, "ClanRoster", "Klan ma’lumoti…", 16, TextAnchor.UpperLeft,
+                new Vector2(28f, -130f), new Vector2(660f, 160f), new Color(0.85f, 0.90f, 0.95f));
+
+            const float bw = 150f;
+            const float gap = 10f;
+            const float btnH = 52f;
+            var x = -320f;
+            MakeBtn(sheet, "ClanCreate", "Yaratish", ref x, -40f, bw, gap, btnH,
+                new Color(0.34f, 0.28f, 0.52f), () => Safe(OnClanCreate));
+            MakeBtn(sheet, "ClanJoin", "Qo‘shilish", ref x, -40f, bw, gap, btnH,
+                new Color(0.16f, 0.40f, 0.46f), () => Safe(OnClanJoin));
+            MakeBtn(sheet, "ClanLeave", "Chiqish", ref x, -40f, bw, gap, btnH,
+                new Color(0.52f, 0.16f, 0.26f), () => Safe(OnClanLeave));
+            MakeBtn(sheet, "ClanRefresh", "Yangila", ref x, -40f, bw, gap, btnH,
+                new Color(0.18f, 0.42f, 0.36f), () => Safe(OnClanRefresh));
+
+            x = -100f;
+            MakeBtn(sheet, "ClanClose", "Yopish", ref x, -110f, 280f, 0f, btnH,
+                new Color(0.22f, 0.24f, 0.28f), () => ShowClanSheet(false));
+            _clanSheet.SetActive(false);
+        }
+
+        void BuildChatSheet(Transform root)
+        {
+            var dim = Panel(root, "ChatDim",
+                new Vector2(0f, 0f), new Vector2(1f, 1f),
+                Vector2.zero, Vector2.zero,
+                new Color(0.02f, 0.03f, 0.05f, 0.55f));
+            dim.offsetMin = Vector2.zero;
+            dim.offsetMax = Vector2.zero;
+            _chatSheet = dim.gameObject;
+            var dimBtn = _chatSheet.AddComponent<Button>();
+            dimBtn.transition = Selectable.Transition.None;
+            dimBtn.onClick.AddListener(() => ShowChatSheet(false));
+
+            var sheet = Panel(dim, "ChatSheet",
+                new Vector2(0.5f, 0f), new Vector2(0.5f, 0f),
+                new Vector2(0f, 220f), new Vector2(720f, 440f),
+                new Color(0.06f, 0.08f, 0.12f, 0.98f));
+
+            Label(sheet, "ChatTitle", "Chat", 24, TextAnchor.UpperLeft,
+                new Vector2(28f, -20f), new Vector2(400f, 32f), new Color(1f, 0.9f, 0.55f));
+            _chatHistoryLabel = Label(sheet, "ChatHist", "Yangila bosing…", 16, TextAnchor.UpperLeft,
+                new Vector2(28f, -70f), new Vector2(660f, 240f), new Color(0.85f, 0.90f, 0.95f));
+
+            const float bw = 180f;
+            const float gap = 12f;
+            const float btnH = 52f;
+            var x = -300f;
+            MakeBtn(sheet, "ChatSend", "Yuborish", ref x, -50f, bw, gap, btnH,
+                new Color(0.16f, 0.40f, 0.46f), () => Safe(OnChatSend));
+            MakeBtn(sheet, "ChatRefresh", "Yangila", ref x, -50f, bw, gap, btnH,
+                new Color(0.18f, 0.42f, 0.36f), () => Safe(OnChatRefresh));
+            MakeBtn(sheet, "ChatClose", "Yopish", ref x, -50f, bw, gap, btnH,
+                new Color(0.22f, 0.24f, 0.28f), () => ShowChatSheet(false));
+            _chatSheet.SetActive(false);
+        }
+
+        void BuildPvpSheet(Transform root)
+        {
+            var dim = Panel(root, "PvpDim",
+                new Vector2(0f, 0f), new Vector2(1f, 1f),
+                Vector2.zero, Vector2.zero,
+                new Color(0.02f, 0.03f, 0.05f, 0.55f));
+            dim.offsetMin = Vector2.zero;
+            dim.offsetMax = Vector2.zero;
+            _pvpSheet = dim.gameObject;
+            var dimBtn = _pvpSheet.AddComponent<Button>();
+            dimBtn.transition = Selectable.Transition.None;
+            dimBtn.onClick.AddListener(() => ShowPvpSheet(false));
+
+            var sheet = Panel(dim, "PvpSheet",
+                new Vector2(0.5f, 0f), new Vector2(0.5f, 0f),
+                new Vector2(0f, 230f), new Vector2(720f, 380f),
+                new Color(0.06f, 0.08f, 0.12f, 0.98f));
+
+            Label(sheet, "PvpTitle", "Live PvP", 24, TextAnchor.UpperLeft,
+                new Vector2(28f, -20f), new Vector2(400f, 32f), new Color(1f, 0.9f, 0.55f));
+            _pvpResultLabel = Label(sheet, "PvpResult", "Jang bosing — practice natija shu yerda.", 18, TextAnchor.UpperLeft,
+                new Vector2(28f, -80f), new Vector2(660f, 160f), new Color(0.95f, 0.88f, 0.75f));
+
+            const float bw = 180f;
+            const float gap = 12f;
+            const float btnH = 52f;
+            var x = -300f;
+            MakeBtn(sheet, "PvpFight", "Jang", ref x, -50f, bw, gap, btnH,
+                new Color(0.52f, 0.16f, 0.26f), () => Safe(OnPvpFight));
+            MakeBtn(sheet, "PvpRematch", "Qayta", ref x, -50f, bw, gap, btnH,
+                new Color(0.46f, 0.28f, 0.14f), () => Safe(OnPvpRematch));
+            MakeBtn(sheet, "PvpClose", "Yopish", ref x, -50f, bw, gap, btnH,
+                new Color(0.22f, 0.24f, 0.28f), () => ShowPvpSheet(false));
+            _pvpSheet.SetActive(false);
+        }
+
+        void BuildTournamentSheet(Transform root)
+        {
+            var dim = Panel(root, "CupDim",
+                new Vector2(0f, 0f), new Vector2(1f, 1f),
+                Vector2.zero, Vector2.zero,
+                new Color(0.02f, 0.03f, 0.05f, 0.55f));
+            dim.offsetMin = Vector2.zero;
+            dim.offsetMax = Vector2.zero;
+            _tournamentSheet = dim.gameObject;
+            var dimBtn = _tournamentSheet.AddComponent<Button>();
+            dimBtn.transition = Selectable.Transition.None;
+            dimBtn.onClick.AddListener(() => ShowTournamentSheet(false));
+
+            var sheet = Panel(dim, "CupSheet",
+                new Vector2(0.5f, 0f), new Vector2(0.5f, 0f),
+                new Vector2(0f, 220f), new Vector2(720f, 420f),
+                new Color(0.06f, 0.08f, 0.12f, 0.98f));
+
+            Label(sheet, "CupTitle", "Turnir", 24, TextAnchor.UpperLeft,
+                new Vector2(28f, -20f), new Vector2(400f, 32f), new Color(1f, 0.9f, 0.55f));
+            _tournamentBracketLabel = Label(sheet, "CupBody", "Yozilish / Yangila — bracket counts.", 16, TextAnchor.UpperLeft,
+                new Vector2(28f, -70f), new Vector2(660f, 220f), new Color(0.90f, 0.88f, 0.78f));
+
+            const float bw = 180f;
+            const float gap = 12f;
+            const float btnH = 52f;
+            var x = -300f;
+            MakeBtn(sheet, "CupJoin", "Yozilish", ref x, -50f, bw, gap, btnH,
+                new Color(0.52f, 0.40f, 0.12f), () => Safe(OnTournamentJoin));
+            MakeBtn(sheet, "CupRefresh", "Yangila", ref x, -50f, bw, gap, btnH,
+                new Color(0.18f, 0.42f, 0.36f), () => Safe(OnTournamentRefresh));
+            MakeBtn(sheet, "CupClose", "Yopish", ref x, -50f, bw, gap, btnH,
+                new Color(0.22f, 0.24f, 0.28f), () => ShowTournamentSheet(false));
+            _tournamentSheet.SetActive(false);
         }
 
         void BuildResultPanel(Transform root)
