@@ -33,6 +33,9 @@ namespace KoG.MiniMvp.UI
         GameObject _busyOverlay;
         GameObject _errorBanner;
         GameObject _socialSheet;
+        GameObject _achievementsSheet;
+        Text[] _achievementProgressLabels;
+        Button[] _achievementClaimButtons;
         Text _resultBody;
         Text _resultStars;
         Text _resultLoot;
@@ -70,6 +73,8 @@ namespace KoG.MiniMvp.UI
         public Action OnRewardedAd;
         public Action OnManualSave;
         public Action OnRetryLoad;
+        public Action OnOpenAchievements;
+        public Action<string> OnClaimAchievement;
 
         GameObject _placementBar;
         GameObject _buildActionBar;
@@ -99,6 +104,7 @@ namespace KoG.MiniMvp.UI
             SetBusy(false);
             ClearError();
             ShowSocialSheet(false);
+            ShowAchievementsSheet(false);
         }
 
         public void SetBusy(bool busy)
@@ -175,10 +181,21 @@ namespace KoG.MiniMvp.UI
 
         public void SetResources(long gold, long mana, long diamond, int barbarians)
         {
+            SetResources(gold, mana, diamond, barbarians, barbarians, 0);
+        }
+
+        public void SetResources(long gold, long mana, long diamond, int barbarians, int housingUsed, int housingMax)
+        {
             if (_goldChip != null) _goldChip.text = "● " + FormatNum(gold);
             if (_manaChip != null) _manaChip.text = "◆ " + FormatNum(mana);
             if (_diamondChip != null) _diamondChip.text = "◇ " + FormatNum(diamond);
-            if (_troopChip != null) _troopChip.text = "⚔ " + barbarians;
+            if (_troopChip != null)
+            {
+                if (housingMax > 0)
+                    _troopChip.text = "⚔ " + housingUsed + "/" + housingMax;
+                else
+                    _troopChip.text = "⚔ " + barbarians;
+            }
         }
 
         public void SetSelected(string label)
@@ -219,19 +236,31 @@ namespace KoG.MiniMvp.UI
         public void ShowAuth(bool visible)
         {
             if (_authRoot != null) _authRoot.SetActive(visible);
-            if (visible) ShowSocialSheet(false);
+            if (visible)
+            {
+                ShowSocialSheet(false);
+                ShowAchievementsSheet(false);
+            }
         }
 
         public void ShowGame(bool visible)
         {
             if (_gameRoot != null) _gameRoot.SetActive(visible);
-            if (!visible) ShowSocialSheet(false);
+            if (!visible)
+            {
+                ShowSocialSheet(false);
+                ShowAchievementsSheet(false);
+            }
         }
 
         public void ShowResult(bool visible)
         {
             if (_resultRoot != null) _resultRoot.SetActive(visible);
-            if (visible) ShowSocialSheet(false);
+            if (visible)
+            {
+                ShowSocialSheet(false);
+                ShowAchievementsSheet(false);
+            }
         }
 
         public void SetResultMessage(string message)
@@ -249,7 +278,55 @@ namespace KoG.MiniMvp.UI
 
         void ShowSocialSheet(bool visible)
         {
+            if (visible) ShowAchievementsSheet(false);
             if (_socialSheet != null) _socialSheet.SetActive(visible);
+        }
+
+        public void ShowAchievementsSheet(bool visible)
+        {
+            if (visible) ShowSocialSheet(false);
+            if (_achievementsSheet != null) _achievementsSheet.SetActive(visible);
+        }
+
+        /// <summary>Bind soft-test achievement rows (order: train_troops, place_mine, first_raid).</summary>
+        public void SetAchievements(KoG.MiniMvp.Network.AchievementDto[] rows)
+        {
+            if (_achievementProgressLabels == null || _achievementClaimButtons == null) return;
+            for (var i = 0; i < _achievementProgressLabels.Length; i++)
+            {
+                var row = rows != null && i < rows.Length ? rows[i] : null;
+                var progressLabel = _achievementProgressLabels[i];
+                var claimBtn = _achievementClaimButtons[i];
+                if (progressLabel == null || claimBtn == null) continue;
+
+                if (row == null)
+                {
+                    progressLabel.text = "—";
+                    claimBtn.interactable = false;
+                    var emptyTxt = claimBtn.GetComponentInChildren<Text>();
+                    if (emptyTxt != null) emptyTxt.text = "—";
+                    continue;
+                }
+
+                progressLabel.text = row.progress + "/" + row.target
+                    + (row.claimed ? " · olindi" : (row.claimable ? " · tayyor" : ""));
+                var label = claimBtn.GetComponentInChildren<Text>();
+                if (row.claimed)
+                {
+                    if (label != null) label.text = "Olindi";
+                    claimBtn.interactable = false;
+                }
+                else if (row.claimable)
+                {
+                    if (label != null) label.text = "+" + row.rewardDiamonds + "◇";
+                    claimBtn.interactable = !_busy;
+                }
+                else
+                {
+                    if (label != null) label.text = "Kut";
+                    claimBtn.interactable = false;
+                }
+            }
         }
 
         static string FormatNum(long n)
@@ -312,14 +389,14 @@ namespace KoG.MiniMvp.UI
             if (muteGo != null) _muteLabel = muteGo.GetComponentInChildren<Text>();
 
             // Resource chips (right → left): troops, diamond, mana, gold
-            _troopChip = MakeResourceChip(top.transform, "TroopChip", "⚔ 0",
-                new Color(0.10f, 0.20f, 0.34f, 0.95f), new Color(0.78f, 0.90f, 1f), -12f, 110f);
+            _troopChip = MakeResourceChip(top.transform, "TroopChip", "⚔ 0/100",
+                new Color(0.10f, 0.20f, 0.34f, 0.95f), new Color(0.78f, 0.90f, 1f), -12f, 130f);
             _diamondChip = MakeResourceChip(top.transform, "DiamondChip", "◇ 0",
-                new Color(0.22f, 0.16f, 0.34f, 0.95f), new Color(0.85f, 0.78f, 1f), -130f, 100f);
+                new Color(0.22f, 0.16f, 0.34f, 0.95f), new Color(0.85f, 0.78f, 1f), -150f, 100f);
             _manaChip = MakeResourceChip(top.transform, "ManaChip", "◆ 0",
-                new Color(0.10f, 0.28f, 0.36f, 0.95f), new Color(0.55f, 0.88f, 1f), -238f, 100f);
+                new Color(0.10f, 0.28f, 0.36f, 0.95f), new Color(0.55f, 0.88f, 1f), -258f, 100f);
             _goldChip = MakeResourceChip(top.transform, "GoldChip", "● 0",
-                new Color(0.38f, 0.26f, 0.06f, 0.95f), new Color(1f, 0.88f, 0.28f), -346f, 110f);
+                new Color(0.38f, 0.26f, 0.06f, 0.95f), new Color(1f, 0.88f, 0.28f), -366f, 110f);
 
             _status = Label(top.transform, "Status", "Guest bilan boshlang", 16, TextAnchor.UpperLeft,
                 new Vector2(16f, -48f), new Vector2(980f, 28f), new Color(0.96f, 0.94f, 0.82f));
@@ -329,13 +406,14 @@ namespace KoG.MiniMvp.UI
                 new Vector2(16f, -106f), new Vector2(520f, 24f), new Color(0.68f, 0.84f, 1f));
             _raidHud = Label(top.transform, "RaidHud", "", 14, TextAnchor.UpperLeft,
                 new Vector2(540f, -106f), new Vector2(460f, 24f), new Color(1f, 0.72f, 0.55f));
-            _manaTip = Label(top.transform, "ManaTip", "◆ Mana = askar · ● Gold = qurilish", 13, TextAnchor.UpperLeft,
-                new Vector2(16f, -132f), new Vector2(700f, 22f), new Color(0.70f, 0.78f, 0.86f));
+            _manaTip = Label(top.transform, "ManaTip", "◆ Mana = askar · ⚔ = lager joyi · ● Gold = qurilish", 13, TextAnchor.UpperLeft,
+                new Vector2(16f, -132f), new Vector2(780f, 22f), new Color(0.70f, 0.78f, 0.86f));
 
             BuildErrorBanner(root);
             BuildAuthPanel(root);
             BuildGameBar(root);
             BuildSocialSheet(root);
+            BuildAchievementsSheet(root);
             BuildResultPanel(root);
             BuildBusyOverlay(root);
         }
@@ -541,10 +619,74 @@ namespace KoG.MiniMvp.UI
                 new Color(0.18f, 0.42f, 0.36f), () => { ShowSocialSheet(false); Safe(OnManualSave); });
 
             x = -320f;
+            MakeBtn(sheet, "Achievements", "Yutuqlar", ref x, -60f, bw, gap, btnH,
+                new Color(0.42f, 0.28f, 0.14f), () =>
+                {
+                    ShowSocialSheet(false);
+                    Safe(OnOpenAchievements);
+                });
             MakeBtn(sheet, "CloseSocial", "Yopish", ref x, -60f, bw, gap, btnH,
                 new Color(0.22f, 0.24f, 0.28f), () => ShowSocialSheet(false));
 
             _socialSheet.SetActive(false);
+        }
+
+        void BuildAchievementsSheet(Transform root)
+        {
+            var dim = Panel(root, "AchievementsDim",
+                new Vector2(0f, 0f), new Vector2(1f, 1f),
+                Vector2.zero, Vector2.zero,
+                new Color(0.02f, 0.03f, 0.05f, 0.55f));
+            dim.offsetMin = Vector2.zero;
+            dim.offsetMax = Vector2.zero;
+            _achievementsSheet = dim.gameObject;
+            var dimBtn = _achievementsSheet.AddComponent<Button>();
+            dimBtn.transition = Selectable.Transition.None;
+            dimBtn.onClick.AddListener(() => ShowAchievementsSheet(false));
+
+            var sheet = Panel(dim, "AchievementsSheet",
+                new Vector2(0.5f, 0f), new Vector2(0.5f, 0f),
+                new Vector2(0f, 230f), new Vector2(720f, 420f),
+                new Color(0.06f, 0.08f, 0.12f, 0.98f));
+
+            Label(sheet, "AchTitle", "Yutuqlar", 24, TextAnchor.UpperLeft,
+                new Vector2(28f, -20f), new Vector2(400f, 32f), new Color(1f, 0.9f, 0.55f));
+            Label(sheet, "AchHint", "Soft-test: Askar 5 · Kon · Birinchi reyd",
+                15, TextAnchor.UpperLeft, new Vector2(28f, -56f), new Vector2(660f, 28f),
+                new Color(0.78f, 0.82f, 0.88f));
+
+            var ids = new[] { "train_troops", "place_mine", "first_raid" };
+            var titles = new[] { "Askar 5", "Kon qo‘yish", "Birinchi reyd" };
+            _achievementProgressLabels = new Text[3];
+            _achievementClaimButtons = new Button[3];
+            var claimYs = new[] { 70f, 0f, -70f };
+
+            for (var i = 0; i < 3; i++)
+            {
+                var yTop = -100f - i * 72f;
+                Label(sheet, "AchName" + i, titles[i], 18, TextAnchor.UpperLeft,
+                    new Vector2(28f, yTop), new Vector2(280f, 28f), new Color(0.95f, 0.93f, 0.85f));
+                _achievementProgressLabels[i] = Label(sheet, "AchProg" + i, "0/1", 16, TextAnchor.UpperLeft,
+                    new Vector2(300f, yTop), new Vector2(220f, 28f), new Color(0.75f, 0.85f, 0.95f));
+
+                var claimX = 200f;
+                var claimBtn = MakeBtn(sheet, "AchClaim" + i, "Kut", ref claimX, claimYs[i], 140f, 0f, 52f,
+                    new Color(0.42f, 0.32f, 0.12f), () => { });
+                var achievementId = ids[i];
+                claimBtn.onClick.RemoveAllListeners();
+                claimBtn.onClick.AddListener(() =>
+                {
+                    if (_busy) return;
+                    OnClaimAchievement?.Invoke(achievementId);
+                });
+                _achievementClaimButtons[i] = claimBtn;
+            }
+
+            var closeX = -100f;
+            MakeBtn(sheet, "CloseAch", "Yopish", ref closeX, -160f, 280f, 0f, 52f,
+                new Color(0.22f, 0.24f, 0.28f), () => ShowAchievementsSheet(false));
+
+            _achievementsSheet.SetActive(false);
         }
 
         void BuildResultPanel(Transform root)

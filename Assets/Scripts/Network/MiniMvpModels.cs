@@ -35,6 +35,38 @@ namespace KoG.MiniMvp.Network
         public UnlockDto unlocks;
         public GoalDto goal;
         public TrainingDto training;
+        public AchievementDto[] achievements;
+        public HousingDto housing;
+    }
+
+    [Serializable]
+    public class AchievementDto
+    {
+        public string id;
+        public string title;
+        public int progress;
+        public int target;
+        public bool claimed;
+        public bool complete;
+        public bool claimable;
+        public int rewardDiamonds;
+    }
+
+    [Serializable]
+    public class HousingDto
+    {
+        public int used;
+        public int max;
+    }
+
+    [Serializable]
+    public class AchievementClaimResponse
+    {
+        public bool success;
+        public string achievementId;
+        public int rewardDiamondsAwarded;
+        public string message;
+        public string error;
     }
 
     [Serializable]
@@ -153,6 +185,7 @@ namespace KoG.MiniMvp.Network
         public int trainSeconds;
         public bool training;
         public int totalCostMana;
+        public HousingDto housing;
         public string message;
         public string error;
     }

@@ -53,6 +53,9 @@ namespace KoG.MiniMvp.App
         long _mana;
         long _diamond;
         int _barbarianCount;
+        int _housingUsed;
+        int _housingMax = 100;
+        AchievementDto[] _achievements;
         int _castleLevel = 1;
         int _campaignMax = 1;
         int _raidFortressId = 1;
@@ -290,6 +293,15 @@ namespace KoG.MiniMvp.App
                     ? "Saqlandi (r" + _save.Revision + ")"
                     : "Saqlash xato: " + result.Message);
             };
+            _hud.OnOpenAchievements = () =>
+            {
+                if (_hud != null)
+                {
+                    _hud.SetAchievements(_achievements);
+                    _hud.ShowAchievementsSheet(true);
+                }
+            };
+            _hud.OnClaimAchievement = id => StartCoroutine(ClaimAchievement(id));
             _hud.OnRetryLoad = () =>
             {
                 if (!SessionStore.HasSession)
@@ -501,7 +513,8 @@ namespace KoG.MiniMvp.App
             if (_hud == null) return;
             _hud.SetBusy(_busy);
             _hud.SetStatus(_status);
-            _hud.SetResources(_gold, _mana, _diamond, _barbarianCount);
+            _hud.SetResources(_gold, _mana, _diamond, _barbarianCount, _housingUsed, _housingMax);
+            _hud.SetAchievements(_achievements);
             if (_screen == UiScreen.Result)
                 _hud.SetResultMessage(_resultMessage);
 
@@ -792,6 +805,19 @@ namespace KoG.MiniMvp.App
                     }
                 }
 
+                if (state.housing != null && state.housing.max > 0)
+                {
+                    _housingUsed = state.housing.used;
+                    _housingMax = state.housing.max;
+                }
+                else
+                {
+                    _housingUsed = _barbarianCount;
+                    _housingMax = 50 + Math.Max(1, _castleLevel) * 50;
+                }
+
+                _achievements = state.achievements;
+
                 var hasMine = false;
                 var hasBarracks = false;
                 var hasCastle = false;
@@ -901,6 +927,57 @@ namespace KoG.MiniMvp.App
                     WorldFeedback.FloatLabel(FieldCenter + Vector3.up * 1.4f, msg, new Color(0.95f, 0.82f, 0.25f));
                     MiniAudio.PlayCollect();
                 });
+        }
+
+        IEnumerator ClaimAchievement(string achievementId)
+        {
+            if (string.IsNullOrEmpty(achievementId) ||
+                string.IsNullOrEmpty(SessionStore.Token) ||
+                string.IsNullOrEmpty(SessionStore.PlayerId))
+                yield break;
+
+            SetBusy(true);
+            SetStatus("Yutuq olinmoqda…");
+            var body = JsonObject(
+                ("playerId", SessionStore.PlayerId),
+                ("achievementId", achievementId)
+            );
+            var ok = false;
+            AchievementClaimResponse res = null;
+            yield return _api.PostJson(
+                "/api/v1/rewards/achievement/claim",
+                body,
+                SessionStore.Token,
+                ApiClient.NewIdempotencyKey(),
+                (code, text) =>
+                {
+                    SetBusy(false);
+                    if (code < 200 || code >= 300)
+                    {
+                        MiniAudio.PlayError();
+                        SetStatus("Yutuq: " + ExtractError(text));
+                        return;
+                    }
+
+                    res = JsonUtility.FromJson<AchievementClaimResponse>(text);
+                    ok = res != null && res.success;
+                });
+
+            if (!ok || res == null) yield break;
+
+            _diamond += Math.Max(0, res.rewardDiamondsAwarded);
+            SetStatus("Yutuq! +" + res.rewardDiamondsAwarded + "◇");
+            WorldFeedback.FloatLabel(
+                FieldCenter + Vector3.up * 1.5f,
+                "+" + res.rewardDiamondsAwarded + "◇",
+                new Color(0.85f, 0.75f, 1f));
+            MiniAudio.PlayCollect();
+            yield return LoadPlayerState();
+            if (_hud != null)
+            {
+                _hud.SetAchievements(_achievements);
+                _hud.ShowAchievementsSheet(true);
+            }
         }
 
         IEnumerator WaitTrainingThenReload(int seconds)
@@ -1094,7 +1171,12 @@ namespace KoG.MiniMvp.App
                 if (code < 200 || code >= 300)
                 {
                     MiniAudio.PlayError();
-                    SetStatus("Askar xato: " + ExtractError(text) + " (Kazarma + mana + L2)");
+                    var err = ExtractError(text);
+                    if (!string.IsNullOrEmpty(err) &&
+                        err.IndexOf("housing", StringComparison.OrdinalIgnoreCase) >= 0)
+                        SetStatus("Lager to‘la — " + err);
+                    else
+                        SetStatus("Askar xato: " + err + " (Kazarma + mana + L2)");
                     return;
                 }
 
@@ -1105,6 +1187,11 @@ namespace KoG.MiniMvp.App
             if (!ok || res == null) yield break;
 
             if (res.totalCostMana > 0) _mana = Math.Max(0, _mana - res.totalCostMana);
+            if (res.housing != null && res.housing.max > 0)
+            {
+                _housingUsed = res.housing.used;
+                _housingMax = res.housing.max;
+            }
             RefreshHud();
 
             if (res.training && res.trainSeconds > 0)
