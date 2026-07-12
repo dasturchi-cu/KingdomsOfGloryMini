@@ -24,7 +24,20 @@ namespace KoG.MiniMvp.World
             Ensure();
             if (cam != null) cam.Punch(0.55f, 0.22f);
             _instance.StartCoroutine(_instance.MarchTroops(from, toward));
-            WorldFeedback.FloatLabel(from + Vector3.up, "⚔ Raid!", new Color(1f, 0.75f, 0.35f));
+            WorldFeedback.FloatLabel(from + Vector3.up, "⚔ Reyd!", new Color(1f, 0.75f, 0.35f));
+        }
+
+        /// <summary>Mid-raid stakes pulse (presentation only; timer/HP already on HUD).</summary>
+        public static void PlayRaidMidPulse(Vector3 worldPos, int hpPercent)
+        {
+            Ensure();
+            var hp = Mathf.Clamp(hpPercent, 0, 100);
+            WorldFeedback.FloatLabel(
+                worldPos + Vector3.up * 1.1f,
+                "Yarim yo‘l · HP " + hp + "%",
+                new Color(1f, 0.7f, 0.4f));
+            if (_instance != null)
+                _instance.StartCoroutine(_instance.FlashScreen(new Color(1f, 0.55f, 0.25f, 0.22f), 0.22f));
         }
 
         public static IEnumerator PlayRaidWin(
@@ -41,9 +54,9 @@ namespace KoG.MiniMvp.World
             }
 
             WorldFeedback.PlaceBurst(worldPos);
-            WorldFeedback.FloatLabel(worldPos, "★ x" + Mathf.Max(stars, 0), new Color(1f, 0.92f, 0.35f));
+            WorldFeedback.FloatLabel(worldPos, "★ ×" + Mathf.Max(stars, 0), new Color(1f, 0.92f, 0.35f));
             if (lootGold > 0)
-                WorldFeedback.FloatLabel(worldPos + Vector3.right * 0.6f, "+" + lootGold + " gold", new Color(1f, 0.85f, 0.25f));
+                WorldFeedback.FloatLabel(worldPos + Vector3.right * 0.6f, "+" + lootGold + " ●", new Color(1f, 0.85f, 0.25f));
 
             yield return _instance.FlashScreen(new Color(1f, 0.92f, 0.45f, 0.55f), 0.35f);
         }
@@ -154,12 +167,21 @@ namespace KoG.MiniMvp.World
 
             var life = 1.35f;
             var t0 = 0f;
+            var clashDone = false;
             while (t0 < life)
             {
                 t0 += Time.deltaTime;
                 var k = Mathf.SmoothStep(0f, 1f, t0 / life);
                 // Defenders commit after a short reaction delay (lite AI feel).
                 var defendK = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((t0 - 0.22f) / (life - 0.22f)));
+
+                if (!clashDone && k >= 0.62f)
+                {
+                    clashDone = true;
+                    var clashPos = Vector3.Lerp(from, camp, 0.7f) + Vector3.up * 0.6f;
+                    WorldFeedback.PlaceBurst(clashPos);
+                    WorldFeedback.FloatLabel(clashPos + Vector3.up * 0.4f, "Zarb!", new Color(1f, 0.85f, 0.4f));
+                }
 
                 for (var i = 0; i < count; i++)
                 {

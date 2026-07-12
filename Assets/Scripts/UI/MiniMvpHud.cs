@@ -113,6 +113,8 @@ namespace KoG.MiniMvp.UI
         GameObject _loopActionBar;
         Button _completeRaidBtn;
         Text _completeRaidLabel;
+        Image _completeRaidImage;
+        Text _resultTitle;
 
         public string Username => _userField != null ? _userField.text : "";
         public string DisplayName => _displayField != null ? _displayField.text : "";
@@ -182,17 +184,39 @@ namespace KoG.MiniMvp.UI
                 : title + "  ·  " + cta;
         }
 
-        public void SetRaidHud(int fortressId, int deployCount, int hpPercent)
+        /// <summary>Readable raid stakes: lager, deploy, HP bar, countdown. Clear when fortressId ≤ 0.</summary>
+        public void SetRaidHud(int fortressId, int deployCount, int hpPercent, int secondsLeft = -1)
         {
             if (_raidHud == null) return;
             if (fortressId <= 0)
             {
                 _raidHud.text = "";
+                if (_raidHud.rectTransform != null)
+                    _raidHud.color = new Color(1f, 0.72f, 0.55f);
                 return;
             }
 
             var hp = Mathf.Clamp(hpPercent, 0, 100);
-            _raidHud.text = "Lager " + fortressId + "  ·  Deploy " + deployCount + "  ·  HP " + hp + "%";
+            var bar = BuildHpBar(hp);
+            var timer = secondsLeft >= 0 ? "  ·  ⏱ " + secondsLeft + "s" : "";
+            _raidHud.text = "Lager " + fortressId + "  ·  " + deployCount + "⚔  ·  " + bar + " " + hp + "%" + timer;
+            // Low HP / last 5s = warmer cue (still client presentation only).
+            if (hp <= 25 || (secondsLeft >= 0 && secondsLeft <= 5))
+                _raidHud.color = new Color(1f, 0.45f, 0.35f);
+            else
+                _raidHud.color = new Color(1f, 0.82f, 0.45f);
+        }
+
+        static string BuildHpBar(int hpPercent)
+        {
+            const int slots = 10;
+            var filled = Mathf.Clamp(Mathf.RoundToInt(hpPercent / 10f), 0, slots);
+            var sb = new System.Text.StringBuilder(slots + 2);
+            sb.Append('[');
+            for (var i = 0; i < slots; i++)
+                sb.Append(i < filled ? '█' : '░');
+            sb.Append(']');
+            return sb.ToString();
         }
 
         public void ShowError(string message, bool showRetry)
@@ -248,7 +272,7 @@ namespace KoG.MiniMvp.UI
             if (_loopActionBar != null) _loopActionBar.SetActive(!placing);
         }
 
-        /// <summary>Disable Complete until raid wait elapsed; show remaining seconds on label.</summary>
+        /// <summary>Disable Complete until raid wait elapsed; show remaining seconds; gold pulse when ready.</summary>
         public void SetRaidCompleteReady(bool ready, int secondsLeft)
         {
             _raidCompleteReady = ready;
@@ -257,8 +281,15 @@ namespace KoG.MiniMvp.UI
             if (_completeRaidLabel != null)
             {
                 _completeRaidLabel.text = ready
-                    ? "Yakunla"
+                    ? "Yakunla ✓"
                     : (secondsLeft > 0 ? "Kut " + secondsLeft + "s" : "Yakunla");
+            }
+
+            if (_completeRaidImage != null)
+            {
+                _completeRaidImage.color = ready
+                    ? new Color(0.72f, 0.48f, 0.12f)
+                    : new Color(0.50f, 0.26f, 0.16f);
             }
         }
 
@@ -304,10 +335,12 @@ namespace KoG.MiniMvp.UI
 
         public void SetResultChips(int stars, long lootGold, bool won)
         {
+            if (_resultTitle != null)
+                _resultTitle.text = won ? "G‘alaba!" : "Mag‘lubiyat";
             if (_resultStars != null)
                 _resultStars.text = won ? "★  " + Mathf.Max(0, stars) : "★  0";
             if (_resultLoot != null)
-                _resultLoot.text = lootGold > 0 ? "+ " + lootGold + " ●" : "Loot 0";
+                _resultLoot.text = lootGold > 0 ? "O‘lja +" + lootGold + " ●" : "O‘lja 0";
         }
 
         void CloseAllOverlaySheets()
@@ -569,8 +602,8 @@ namespace KoG.MiniMvp.UI
                 new Vector2(16f, -78f), new Vector2(980f, 26f), new Color(0.55f, 0.95f, 0.72f));
             _selectedChip = Label(top.transform, "Selected", "Tanlangan: —", 14, TextAnchor.UpperLeft,
                 new Vector2(16f, -106f), new Vector2(520f, 24f), new Color(0.68f, 0.84f, 1f));
-            _raidHud = Label(top.transform, "RaidHud", "", 14, TextAnchor.UpperLeft,
-                new Vector2(540f, -106f), new Vector2(460f, 24f), new Color(1f, 0.72f, 0.55f));
+            _raidHud = Label(top.transform, "RaidHud", "", 15, TextAnchor.UpperLeft,
+                new Vector2(16f, -152f), new Vector2(1040f, 26f), new Color(1f, 0.82f, 0.45f));
             _manaTip = Label(top.transform, "ManaTip", "◆ Mana = askar · ⚔ = lager joyi · ● Gold = qurilish", 13, TextAnchor.UpperLeft,
                 new Vector2(16f, -132f), new Vector2(780f, 22f), new Color(0.70f, 0.78f, 0.86f));
 
@@ -723,7 +756,10 @@ namespace KoG.MiniMvp.UI
                 new Color(0.50f, 0.26f, 0.16f), () => Safe(OnCompleteRaid));
             _completeRaidBtn = completeBtn;
             if (completeBtn != null)
+            {
                 _completeRaidLabel = completeBtn.GetComponentInChildren<Text>();
+                _completeRaidImage = completeBtn.GetComponent<Image>();
+            }
             completeBtn.interactable = false;
             MakeBtn(_loopActionBar.transform, "Social", "Ijtimoiy", ref x, row2Y + 8f, bw, gap, btnH,
                 new Color(0.28f, 0.34f, 0.52f), () =>
@@ -1071,34 +1107,34 @@ namespace KoG.MiniMvp.UI
 
             var sheet = Panel(dim, "ResultPanel",
                 new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
-                Vector2.zero, new Vector2(720f, 380f),
+                Vector2.zero, new Vector2(720f, 420f),
                 new Color(0.06f, 0.07f, 0.11f, 0.98f));
 
-            Label(sheet, "ResultTitle", "Reyd natijasi", 24, TextAnchor.UpperLeft,
-                new Vector2(28f, -20f), new Vector2(400f, 32f), new Color(1f, 0.9f, 0.55f));
+            _resultTitle = Label(sheet, "ResultTitle", "Reyd natijasi", 26, TextAnchor.UpperLeft,
+                new Vector2(28f, -18f), new Vector2(660f, 34f), new Color(1f, 0.9f, 0.55f));
 
             var starChip = Panel(sheet, "StarChip",
                 new Vector2(0f, 1f), new Vector2(0f, 1f),
-                new Vector2(28f, -70f), new Vector2(200f, 48f),
+                new Vector2(28f, -70f), new Vector2(200f, 52f),
                 new Color(0.42f, 0.32f, 0.08f, 0.95f));
             starChip.pivot = new Vector2(0f, 1f);
             _resultStars = Label(starChip, "StarTxt", "★  0", 22, TextAnchor.MiddleCenter,
-                new Vector2(8f, -8f), new Vector2(184f, 32f), new Color(1f, 0.92f, 0.4f));
+                new Vector2(8f, -10f), new Vector2(184f, 32f), new Color(1f, 0.92f, 0.4f));
             CenterLabel(_resultStars);
 
             var lootChip = Panel(sheet, "LootChip",
                 new Vector2(0f, 1f), new Vector2(0f, 1f),
-                new Vector2(250f, -70f), new Vector2(220f, 48f),
+                new Vector2(250f, -70f), new Vector2(280f, 52f),
                 new Color(0.38f, 0.26f, 0.06f, 0.95f));
             lootChip.pivot = new Vector2(0f, 1f);
-            _resultLoot = Label(lootChip, "LootTxt", "Loot 0", 20, TextAnchor.MiddleCenter,
-                new Vector2(8f, -8f), new Vector2(204f, 32f), new Color(1f, 0.88f, 0.28f));
+            _resultLoot = Label(lootChip, "LootTxt", "O‘lja 0", 20, TextAnchor.MiddleCenter,
+                new Vector2(8f, -10f), new Vector2(264f, 32f), new Color(1f, 0.88f, 0.28f));
             CenterLabel(_resultLoot);
 
             _resultBody = Label(sheet, "Body", "", 20, TextAnchor.UpperLeft,
-                new Vector2(28f, -140f), new Vector2(660f, 140f), new Color(1f, 0.95f, 0.7f));
+                new Vector2(28f, -140f), new Vector2(660f, 160f), new Color(1f, 0.95f, 0.7f));
             var okX = -100f;
-            MakeBtn(sheet, "Ok", "OK — bazaga", ref okX, -150f, 280f, 0f, 52f,
+            MakeBtn(sheet, "Ok", "OK — bazaga", ref okX, -170f, 280f, 0f, 56f,
                 new Color(0.28f, 0.48f, 0.28f), () => Safe(OnResultOk));
         }
 

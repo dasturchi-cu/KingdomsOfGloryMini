@@ -1478,7 +1478,7 @@ namespace KoG.MiniMvp.App
                 if (_hud != null)
                 {
                     _hud.SetRaidCompleteReady(false, 30);
-                    _hud.SetRaidHud(_raidFortressId, _raidDeployCount, 100);
+                    _hud.SetRaidHud(_raidFortressId, _raidDeployCount, 100, 30);
                 }
                 SetStatus("Reyd: Lager " + _raidFortressId + " · " + _raidDeployCount + " askar · 30s");
             });
@@ -1497,19 +1497,28 @@ namespace KoG.MiniMvp.App
         IEnumerator RaidCountdownThenComplete()
         {
             const float wait = 30f;
+            var midCueDone = false;
             while (_raidActive)
             {
                 var left = wait - (Time.realtimeSinceStartup - _raidStartedAt);
                 if (left <= 0f) break;
                 var elapsed = wait - Mathf.Max(0f, left);
+                var secLeft = Mathf.CeilToInt(left);
                 // Visual HP drain from deploy power (honest feedback; server still authoritative).
                 var hp = Mathf.Clamp(100 - Mathf.RoundToInt((elapsed / wait) * (40 + _raidDeployCount * 5)), 5, 100);
                 if (_hud != null)
                 {
-                    _hud.SetRaidCompleteReady(false, Mathf.CeilToInt(left));
-                    _hud.SetRaidHud(_raidFortressId, _raidDeployCount, hp);
+                    _hud.SetRaidCompleteReady(false, secLeft);
+                    _hud.SetRaidHud(_raidFortressId, _raidDeployCount, hp, secLeft);
                 }
-                SetStatus("Reyd L" + _raidFortressId + ": " + Mathf.CeilToInt(left) + "s · HP " + hp + "%");
+
+                if (!midCueDone && left <= 15f)
+                {
+                    midCueDone = true;
+                    RaidPresentationFx.PlayRaidMidPulse(FieldCenter + new Vector3(4.5f, 0f, 4.5f), hp);
+                }
+
+                SetStatus("Reyd L" + _raidFortressId + ": " + secLeft + "s · HP " + hp + "%");
                 yield return new WaitForSecondsRealtime(0.25f);
             }
 
@@ -1517,9 +1526,9 @@ namespace KoG.MiniMvp.App
             if (_hud != null)
             {
                 _hud.SetRaidCompleteReady(true, 0);
-                _hud.SetRaidHud(_raidFortressId, _raidDeployCount, 15);
+                _hud.SetRaidHud(_raidFortressId, _raidDeployCount, 15, 0);
             }
-            SetStatus("Reyd tayyor — Yakunla yoki avto…");
+            SetStatus("Reyd tayyor — Yakunla ✓ yoki avto…");
             yield return new WaitForSecondsRealtime(0.35f);
             if (_raidActive)
                 yield return CompleteRaid();
@@ -1597,9 +1606,14 @@ namespace KoG.MiniMvp.App
             var won = stars > 0;
             var clearTag = res.firstClear ? " (birinchi)" : " (qayta)";
             _resultMessage = won
-                ? "G‘alaba!\nLager " + _raidFortressId + "\n★ " + stars +
-                  "\nLoot: +" + loot + " ●" + clearTag + "\nBalans: " + _gold
-                : "Mag‘lubiyat\nLoot: 0\nBalans: " + _gold;
+                ? "Lager " + _raidFortressId + clearTag +
+                  "\n★ " + stars + "  ·  Askar −" + deploy +
+                  "\nO‘lja: +" + loot + " ●" +
+                  "\nBalans: " + _gold + " ●"
+                : "Lager " + _raidFortressId +
+                  "\nAskar −" + deploy +
+                  "\nO‘lja: 0" +
+                  "\nBalans: " + _gold + " ●";
 
             if (won)
             {
