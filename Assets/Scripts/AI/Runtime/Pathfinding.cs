@@ -64,12 +64,14 @@ namespace KoG.MiniMvp.AI
             public int Parent;
             public bool Open;
             public bool Closed;
+            public ushort SessionId;
         }
 
         readonly PathGrid _grid;
         readonly Node[] _nodes;
         readonly int[] _openHeap;
         int _openCount;
+        ushort _sessionId;
         readonly List<Vector3> _scratchPath = new List<Vector3>(64);
 
         public GridPathfinder(PathGrid grid)
@@ -78,6 +80,20 @@ namespace KoG.MiniMvp.AI
             var n = grid.Size * grid.Size;
             _nodes = new Node[n];
             _openHeap = new int[n];
+        }
+
+        ref Node GetNode(int id)
+        {
+            ref var n = ref _nodes[id];
+            if (n.SessionId != _sessionId)
+            {
+                n.SessionId = _sessionId;
+                n.Open = false;
+                n.Closed = false;
+                n.Parent = -1;
+                n.G = int.MaxValue;
+            }
+            return ref n;
         }
 
         public bool TryFindPath(Vector3 from, Vector3 to, int maxIterations, int maxNodes, List<Vector3> pathOut)
@@ -107,21 +123,24 @@ namespace KoG.MiniMvp.AI
 
             var size = _grid.Size;
             var total = size * size;
-            for (var i = 0; i < total; i++)
+
+            _sessionId++;
+            if (_sessionId == 0)
             {
-                _nodes[i].Open = false;
-                _nodes[i].Closed = false;
-                _nodes[i].Parent = -1;
-                _nodes[i].G = int.MaxValue;
+                // Handle session ID wrap-around safely
+                for (var i = 0; i < total; i++)
+                    _nodes[i].SessionId = 0;
+                _sessionId = 1;
             }
 
             _openCount = 0;
             var start = Idx(sx, sz);
-            _nodes[start].X = sx;
-            _nodes[start].Z = sz;
-            _nodes[start].G = 0;
-            _nodes[start].F = Heuristic(sx, sz, gx, gz);
-            _nodes[start].Open = true;
+            ref var startNode = ref GetNode(start);
+            startNode.X = sx;
+            startNode.Z = sz;
+            startNode.G = 0;
+            startNode.F = Heuristic(sx, sz, gx, gz);
+            startNode.Open = true;
             PushOpen(start);
 
             var iterations = 0;
@@ -130,7 +149,7 @@ namespace KoG.MiniMvp.AI
             {
                 iterations++;
                 var current = PopOpen();
-                ref var cn = ref _nodes[current];
+                ref var cn = ref GetNode(current);
                 cn.Open = false;
                 cn.Closed = true;
 
@@ -178,10 +197,10 @@ namespace KoG.MiniMvp.AI
             }
 
             var id = Idx(x, z);
-            ref var n = ref _nodes[id];
+            ref var n = ref GetNode(id);
             if (n.Closed) return;
 
-            var g = _nodes[parent].G + cost;
+            var g = GetNode(parent).G + cost;
             if (n.Open && g >= n.G) return;
 
             n.X = x;
@@ -230,24 +249,57 @@ namespace KoG.MiniMvp.AI
 
         void PushOpen(int id)
         {
-            _openHeap[_openCount++] = id;
+            var idx = _openCount++;
+            _openHeap[idx] = id;
+            
+            // Percolate up
+            while (idx > 0)
+            {
+                var parent = (idx - 1) / 2;
+                if (_nodes[_openHeap[idx]].F >= _nodes[_openHeap[parent]].F)
+                    break;
+                
+                // Swap
+                var tmp = _openHeap[idx];
+                _openHeap[idx] = _openHeap[parent];
+                _openHeap[parent] = tmp;
+                
+                idx = parent;
+            }
         }
 
         int PopOpen()
         {
-            // Linear pick-min — fine for capped open set on mobile Mini grids (≤20²).
-            var best = 0;
-            var bestF = _nodes[_openHeap[0]].F;
-            for (var i = 1; i < _openCount; i++)
+            var id = _openHeap[0];
+            _openCount--;
+            if (_openCount > 0)
             {
-                var f = _nodes[_openHeap[i]].F;
-                if (f >= bestF) continue;
-                bestF = f;
-                best = i;
+                _openHeap[0] = _openHeap[_openCount];
+                
+                // Percolate down
+                var idx = 0;
+                while (true)
+                {
+                    var left = 2 * idx + 1;
+                    var right = 2 * idx + 2;
+                    var smallest = idx;
+                    
+                    if (left < _openCount && _nodes[_openHeap[left]].F < _nodes[_openHeap[smallest]].F)
+                        smallest = left;
+                    if (right < _openCount && _nodes[_openHeap[right]].F < _nodes[_openHeap[smallest]].F)
+                        smallest = right;
+                        
+                    if (smallest == idx)
+                        break;
+                        
+                    // Swap
+                    var tmp = _openHeap[idx];
+                    _openHeap[idx] = _openHeap[smallest];
+                    _openHeap[smallest] = tmp;
+                    
+                    idx = smallest;
+                }
             }
-
-            var id = _openHeap[best];
-            _openHeap[best] = _openHeap[--_openCount];
             return id;
         }
     }

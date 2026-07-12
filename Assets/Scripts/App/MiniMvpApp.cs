@@ -665,12 +665,19 @@ namespace KoG.MiniMvp.App
 
         void RefreshAiPathObstacles()
         {
-            if (_troops == null) return;
-            var blocked = new System.Collections.Generic.List<Vector3>(16);
-            foreach (var view in _buildingViews.Values)
+            if (_troops == null || _buildings == null || _buildingGrid == null) return;
+            var blocked = new System.Collections.Generic.List<Vector3>(64);
+            var cells = new System.Collections.Generic.List<GridCoord>(16);
+
+            foreach (var inst in _buildings.Instances.Values)
             {
-                if (view == null) continue;
-                blocked.Add(view.transform.position);
+                if (inst == null) continue;
+                inst.Footprint.CollectCells(inst.Anchor, cells);
+                for (var i = 0; i < cells.Count; i++)
+                {
+                    var world = _buildingGrid.GridToWorld(cells[i].X, cells[i].Z);
+                    blocked.Add(world);
+                }
             }
 
             _troops.RefreshPathObstacles(blocked);

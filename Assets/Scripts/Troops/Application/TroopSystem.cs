@@ -241,11 +241,76 @@ namespace KoG.MiniMvp.Troops
         {
             if (!_ready || _active.Count == 0) return;
             var dt = Time.deltaTime;
+            
+            ApplyLocalSeparation(dt);
+            
             // Copy count — death may despawn during tick.
             for (var i = _active.Count - 1; i >= 0; i--)
             {
                 var a = _active[i];
                 if (a != null) a.Tick(dt);
+            }
+        }
+
+        void ApplyLocalSeparation(float dt)
+        {
+            var count = _active.Count;
+            if (count < 2) return;
+
+            const float sepRadius = 0.48f;
+            const float sepRadiusSqr = sepRadius * sepRadius;
+            const float forceStrength = 1.6f;
+
+            for (var i = 0; i < count; i++)
+            {
+                var a = _active[i];
+                if (a == null || !a.IsAlive) continue;
+
+                var posA = a.transform.position;
+                var pushDir = Vector3.zero;
+                var overlaps = 0;
+
+                for (var j = 0; j < count; j++)
+                {
+                    if (i == j) continue;
+                    var b = _active[j];
+                    if (b == null || !b.IsAlive) continue;
+
+                    var posB = b.transform.position;
+                    var dx = posA.x - posB.x;
+                    var dz = posA.z - posB.z;
+                    var distSqr = dx * dx + dz * dz;
+
+                    if (distSqr < sepRadiusSqr)
+                    {
+                        var dist = Mathf.Sqrt(distSqr);
+                        if (dist > 0.001f)
+                        {
+                            pushDir.x += (dx / dist) * (sepRadius - dist);
+                            pushDir.z += (dz / dist) * (sepRadius - dist);
+                        }
+                        else
+                        {
+                            pushDir.x += UnityEngine.Random.Range(-0.1f, 0.1f);
+                            pushDir.z += UnityEngine.Random.Range(-0.1f, 0.1f);
+                        }
+                        overlaps++;
+                    }
+                }
+
+                if (overlaps > 0)
+                {
+                    var pushStep = pushDir * (forceStrength * dt);
+                    pushStep.y = 0f;
+                    
+                    var maxPush = 2f * dt;
+                    if (pushStep.sqrMagnitude > maxPush * maxPush)
+                    {
+                        pushStep = pushStep.normalized * maxPush;
+                    }
+                    
+                    a.transform.position += pushStep;
+                }
             }
         }
 

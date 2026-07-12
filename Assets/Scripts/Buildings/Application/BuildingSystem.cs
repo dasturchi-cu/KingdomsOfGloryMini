@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using KoG.MiniMvp.Network;
 using KoG.MiniMvp.World;
+using KoG.MiniMvp.App;
 using UnityEngine;
 
 namespace KoG.MiniMvp.Buildings
@@ -28,6 +29,7 @@ namespace KoG.MiniMvp.Buildings
         readonly PlacementSession _session = new PlacementSession();
         readonly ConstructionTimer _timer = new ConstructionTimer();
         readonly Dictionary<string, BuildingInstance> _instances = new Dictionary<string, BuildingInstance>();
+        static readonly Collider[] PhysicsValidationHits = new Collider[32];
         bool _busy;
 
         public bool IsPlacing => _session.IsActive;
@@ -195,7 +197,7 @@ namespace KoG.MiniMvp.Buildings
             }
 
             _session.Rotate(1);
-            _session.Revalidate((a, f) => Validate(a, f, _session.BuildingType));
+            _session.Revalidate((a, f) => Validate(a, f, _session.BuildingType, null));
             if (!_session.IsValid)
             {
                 // Keep rotation but try to nudge to nearest valid with same rotation.
@@ -218,7 +220,7 @@ namespace KoG.MiniMvp.Buildings
             int z = Mathf.Clamp(Mathf.RoundToInt(world.z / _grid.CellSize), 0, _grid.GridSize - _session.Footprint.OccupiedDepth);
 
             var anchor = new GridCoord(x, z);
-            var valid = Validate(anchor, _session.Footprint, _session.BuildingType);
+            var valid = Validate(anchor, _session.Footprint, _session.BuildingType, null);
             if (!_session.WouldChangeAnchor(anchor, valid)) return;
             var cellMoved = !anchor.Equals(_session.Anchor);
             _session.SetAnchor(anchor, valid);
@@ -240,7 +242,7 @@ namespace KoG.MiniMvp.Buildings
             _relocateType = inst.Type;
             _occupancy.Free(buildingId);
             // While castle is mid-relocate, keep-out uses its preview anchor (SetAnchorPreview).
-            _relocateValid = Validate(inst.Anchor, _relocateFootprint, _relocateType);
+            _relocateValid = Validate(inst.Anchor, _relocateFootprint, _relocateType, _relocateBuildingId);
             RefreshRelocatePreview(inst.Anchor);
             Emit("Sudrab joylang — qo‘yib yuboring");
             StateChanged?.Invoke();
@@ -256,7 +258,7 @@ namespace KoG.MiniMvp.Buildings
             int z = Mathf.Clamp(Mathf.RoundToInt(world.z / _grid.CellSize), 0, _grid.GridSize - _relocateFootprint.OccupiedDepth);
 
             var anchor = new GridCoord(x, z);
-            var valid = Validate(anchor, _relocateFootprint, _relocateType);
+            var valid = Validate(anchor, _relocateFootprint, _relocateType, _relocateBuildingId);
             var prevAnchor = default(GridCoord);
             var hadPrev = _instances.TryGetValue(_relocateBuildingId, out var inst);
             if (hadPrev) prevAnchor = inst.Anchor;
@@ -693,14 +695,64 @@ namespace KoG.MiniMvp.Buildings
             return _grid.GridToWorld(anchor.X, anchor.Z);
         }
 
-        bool Validate(GridCoord anchor, BuildingFootprint footprint, string buildingType)
+        bool Validate(GridCoord anchor, BuildingFootprint footprint, string buildingType, string ignoreBuildingId)
         {
             FindCastle(out var castle, out var keepOut);
             if (buildingType == "castle" && keepOut <= 0)
             {
                 keepOut = BuildingDefinitionCatalog.GetOrDefault("castle").KeepOutChebyshev;
             }
-            return PlacementRules.CanPlace(_occupancy, buildingType, anchor, footprint, castle, keepOut);
+            
+            // 1. Grid Validation
+            if (!PlacementRules.CanPlace(_occupancy, buildingType, anchor, footprint, castle, keepOut))
+                return false;
+
+            // 2. Physics Collision Validation
+            if (_grid == null) return true;
+            
+            float cx = _grid.GridToWorld(anchor.X, anchor.Z).x;
+            float cz = _grid.GridToWorld(anchor.X, anchor.Z).z;
+            
+            Vector3 center = new Vector3(
+                cx + (footprint.OccupiedWidth * _grid.CellSize) / 2f, 
+                5f, 
+                cz + (footprint.OccupiedDepth * _grid.CellSize) / 2f
+            );
+            
+            Vector3 halfExtents = new Vector3(
+                (footprint.OccupiedWidth * _grid.CellSize) / 2f - 0.1f, 
+                5f, 
+                (footprint.OccupiedDepth * _grid.CellSize) / 2f - 0.1f
+            );
+            
+            int hitCount = Physics.OverlapBoxNonAlloc(center, halfExtents, PhysicsValidationHits, Quaternion.identity, ~0, QueryTriggerInteraction.Ignore);
+            for (int i = 0; i < hitCount; i++)
+            {
+                var hit = PhysicsValidationHits[i];
+                var hitObj = hit.gameObject;
+                string hitName = hitObj.name;
+                
+                // Ignore standard terrain/ground
+                if (hitName == "Ground" || hitName == "Terrain" || hitName == "Plane" || hitName.Contains("Ground") || hitName.Contains("Terrain")) 
+                    continue;
+                    
+                // Ignore building being relocated
+                if (!string.IsNullOrEmpty(ignoreBuildingId))
+                {
+                    var marker = hit.GetComponentInParent<BuildingMarker>();
+                    if (marker != null && marker.buildingId == ignoreBuildingId)
+                        continue;
+                }
+
+                // Ignore placement visualizers
+                if (hit.GetComponentInParent<KoG.MiniMvp.World.PlacePreviewFx>() != null) 
+                    continue;
+
+                // Explicit block list or any other collider blocks placement
+                return false;
+            }
+
+            return true;
         }
 
         void FindCastle(out GridCoord? castle, out int keepOut)
