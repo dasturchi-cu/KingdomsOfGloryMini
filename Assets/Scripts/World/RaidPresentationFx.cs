@@ -6,14 +6,15 @@ using UnityEngine.UI;
 namespace KoG.MiniMvp.World
 {
     /// <summary>
-    /// Client-only raid juice: troop march cue, camera punch, result flash.
-    /// Does not change server payloads or battle math.
+    /// Client-only raid juice: troop march cue, lite defender counter-charge (P1-06),
+    /// camera punch, result flash. Does not change server payloads or battle math.
     /// </summary>
     public sealed class RaidPresentationFx : MonoBehaviour
     {
         static RaidPresentationFx _instance;
         static Material _troopMat;
         static Material _campMat;
+        static Material _defenderMat;
 
         CanvasGroup _flashGroup;
         Image _flashImage;
@@ -124,32 +125,72 @@ namespace KoG.MiniMvp.World
             SpawnCampCue(camp);
 
             const int count = 5;
+            const int defenders = 3;
             EnsureMarchPool(count);
+            EnsureDefenderPool(defenders);
+            var right = Vector3.Cross(Vector3.up, dir).normalized;
+
             for (var i = 0; i < count; i++)
             {
                 var t = _marchPool[i];
                 t.gameObject.SetActive(true);
-                var lateral = Vector3.Cross(Vector3.up, dir).normalized * ((i - 2) * 0.28f);
+                var lateral = right * ((i - 2) * 0.28f);
                 t.position = from + Vector3.up * 0.35f + lateral;
                 t.localScale = new Vector3(0.28f, 0.32f, 0.28f);
             }
 
-            var life = 1.15f;
+            // P1-06 lite AI: defenders idle at camp, then engage nearest attackers.
+            for (var i = 0; i < defenders; i++)
+            {
+                var d = _defenderPool[i];
+                d.gameObject.SetActive(true);
+                var lateral = right * ((i - 1) * 0.32f);
+                d.position = camp + Vector3.up * 0.35f + lateral + (-dir) * 0.15f;
+                d.localScale = new Vector3(0.26f, 0.34f, 0.26f);
+                d.rotation = Quaternion.LookRotation(-dir);
+            }
+
+            WorldFeedback.FloatLabel(camp + Vector3.up * 1.2f, "Himoya!", new Color(1f, 0.45f, 0.35f));
+
+            var life = 1.35f;
             var t0 = 0f;
             while (t0 < life)
             {
                 t0 += Time.deltaTime;
                 var k = Mathf.SmoothStep(0f, 1f, t0 / life);
+                // Defenders commit after a short reaction delay (lite AI feel).
+                var defendK = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((t0 - 0.22f) / (life - 0.22f)));
+
                 for (var i = 0; i < count; i++)
                 {
                     var troop = _marchPool[i];
                     if (troop == null) continue;
-                    var lateral = Vector3.Cross(Vector3.up, dir).normalized * ((i - 2) * 0.28f);
+                    var lateral = right * ((i - 2) * 0.28f);
                     var start = from + Vector3.up * 0.35f + lateral;
                     var end = camp + Vector3.up * 0.35f + lateral * 0.4f;
                     troop.position = Vector3.Lerp(start, end, k);
                     troop.rotation = Quaternion.LookRotation(dir);
                 }
+
+                for (var i = 0; i < defenders; i++)
+                {
+                    var def = _defenderPool[i];
+                    if (def == null) continue;
+                    // Engage nearest attacker lane (same index when possible).
+                    var targetIdx = Mathf.Clamp(i + 1, 0, count - 1);
+                    var attacker = _marchPool[targetIdx];
+                    var homeLateral = right * ((i - 1) * 0.32f);
+                    var home = camp + Vector3.up * 0.35f + homeLateral;
+                    var meet = attacker != null
+                        ? Vector3.Lerp(attacker.position, home, 0.35f)
+                        : home + dir * 0.8f;
+                    def.position = Vector3.Lerp(home, meet, defendK);
+                    var face = meet - home;
+                    face.y = 0f;
+                    if (face.sqrMagnitude > 0.001f)
+                        def.rotation = Quaternion.LookRotation(face.normalized);
+                }
+
                 yield return null;
             }
 
@@ -158,9 +199,16 @@ namespace KoG.MiniMvp.World
                 if (_marchPool[i] != null)
                     _marchPool[i].gameObject.SetActive(false);
             }
+
+            for (var i = 0; i < defenders; i++)
+            {
+                if (_defenderPool[i] != null)
+                    _defenderPool[i].gameObject.SetActive(false);
+            }
         }
 
         Transform[] _marchPool;
+        Transform[] _defenderPool;
 
         void EnsureMarchPool(int count)
         {
@@ -176,6 +224,23 @@ namespace KoG.MiniMvp.World
                 if (rend != null) rend.sharedMaterial = TroopMat();
                 go.SetActive(false);
                 _marchPool[i] = go.transform;
+            }
+        }
+
+        void EnsureDefenderPool(int count)
+        {
+            if (_defenderPool != null && _defenderPool.Length >= count) return;
+            _defenderPool = new Transform[count];
+            for (var i = 0; i < count; i++)
+            {
+                var go = GameObject.CreatePrimitive(PrimitiveType.Capsule);
+                go.name = "RaidDefenderCue";
+                Object.Destroy(go.GetComponent<Collider>());
+                go.transform.SetParent(transform, false);
+                var rend = go.GetComponent<Renderer>();
+                if (rend != null) rend.sharedMaterial = DefenderMat();
+                go.SetActive(false);
+                _defenderPool[i] = go.transform;
             }
         }
 
@@ -219,6 +284,13 @@ namespace KoG.MiniMvp.World
             if (_campMat != null) return _campMat;
             _campMat = MakeMat(new Color(0.75f, 0.22f, 0.18f));
             return _campMat;
+        }
+
+        static Material DefenderMat()
+        {
+            if (_defenderMat != null) return _defenderMat;
+            _defenderMat = MakeMat(new Color(0.85f, 0.28f, 0.22f));
+            return _defenderMat;
         }
 
         static Material MakeMat(Color c)
