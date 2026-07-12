@@ -424,8 +424,13 @@ namespace KoG.MiniMvp.App
         {
             if (_buildingGrid == null)
             {
-                var parent = _fieldRoot != null ? _fieldRoot : transform;
-                _buildingGrid = BuildingGrid.Build(parent, gridSize, cellSize, FieldCenter);
+                // FieldVisualBuilder may already have built one under Village/Gameplay — reuse it.
+                _buildingGrid = UnityEngine.Object.FindFirstObjectByType<BuildingGrid>();
+                if (_buildingGrid == null)
+                {
+                    var parent = _fieldRoot != null ? _fieldRoot : transform;
+                    _buildingGrid = BuildingGrid.Build(parent, gridSize, cellSize, FieldCenter);
+                }
             }
 
             if (_buildings == null)
@@ -1072,6 +1077,7 @@ namespace KoG.MiniMvp.App
                     var cx = gridSize / 2;
                     var cz = gridSize / 2;
                     SpawnBuilding("local_castle_fallback", "castle", 1, cx, cz, 0);
+                    _buildings?.RegisterLocalCastleFallback("local_castle_fallback", cx, cz);
                     _selectedBuildingId = "local_castle_fallback";
                     buildingCount++;
                     Debug.LogWarning("[MiniMvp] Server castle missing — spawned center fallback");
@@ -1722,7 +1728,7 @@ namespace KoG.MiniMvp.App
 
         IEnumerator CompleteRaid()
         {
-            if (!_raidActive && Time.realtimeSinceStartup - _raidStartedAt > 120f)
+            if (!_raidActive)
             {
                 SetStatus("Avval Raid bosing");
                 yield break;
@@ -1737,26 +1743,15 @@ namespace KoG.MiniMvp.App
                 yield break;
             }
 
-            _raidActive = false;
-            if (_raidCountdownCo != null)
-            {
-                StopCoroutine(_raidCountdownCo);
-                _raidCountdownCo = null;
-            }
-            if (_hud != null)
-            {
-                _hud.SetRaidCompleteReady(false, 0);
-                _hud.SetRaidHud(0, 0, 0);
-            }
-
             var army = _barbarianCount + _archerCount;
             var deploy = Math.Max(1, Math.Min(_raidDeployCount, Math.Max(1, army)));
             var barbs = Math.Min(_barbarianCount, deploy);
             var archers = Math.Min(_archerCount, deploy - barbs);
+            // Server awards serverStars; never claim above 0 here (anti-cheat rejects claim > server).
             var sb = new StringBuilder();
             sb.Append("{\"playerId\":\"").Append(SessionStore.PlayerId)
               .Append("\",\"fortressId\":").Append(_raidFortressId)
-              .Append(",\"starsEarned\":1,\"deployTicks\":[");
+              .Append(",\"starsEarned\":0,\"deployTicks\":[");
             var wrote = 0;
             for (var i = 0; i < barbs; i++)
             {
@@ -1793,7 +1788,24 @@ namespace KoG.MiniMvp.App
                     ok = true;
                 });
 
-            if (!ok || res == null) yield break;
+            if (!ok || res == null)
+            {
+                // Keep raid session so player can retry Yakunla without full restart.
+                if (_hud != null) _hud.SetRaidCompleteReady(true, 0);
+                yield break;
+            }
+
+            _raidActive = false;
+            if (_raidCountdownCo != null)
+            {
+                StopCoroutine(_raidCountdownCo);
+                _raidCountdownCo = null;
+            }
+            if (_hud != null)
+            {
+                _hud.SetRaidCompleteReady(false, 0);
+                _hud.SetRaidHud(0, 0, 0);
+            }
 
             FunnelAnalytics.Instance?.Track("raid_complete", ("fortressId", _raidFortressId.ToString()));
 

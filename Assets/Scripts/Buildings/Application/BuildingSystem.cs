@@ -81,6 +81,27 @@ namespace KoG.MiniMvp.Buildings
             StateChanged?.Invoke();
         }
 
+        /// <summary>Visual-only castle when server omits one — occupy center so placement cannot overlap.</summary>
+        public void RegisterLocalCastleFallback(string id, int gridX, int gridZ)
+        {
+            if (_occupancy == null || string.IsNullOrEmpty(id)) return;
+            if (_instances.ContainsKey(id)) return;
+            var inst = new BuildingInstance
+            {
+                Id = id,
+                Type = "castle",
+                Level = 1,
+                Anchor = new GridCoord(gridX, gridZ),
+                RotationSteps = 0,
+                IsUnderConstruction = false,
+                IsDamaged = false,
+                ConstructionSecondsLeft = 0
+            };
+            _instances[inst.Id] = inst;
+            _occupancy.Occupy(inst.Id, inst.Anchor, inst.Footprint);
+            StateChanged?.Invoke();
+        }
+
         public bool TryGet(string buildingId, out BuildingInstance inst) =>
             _instances.TryGetValue(buildingId, out inst);
 

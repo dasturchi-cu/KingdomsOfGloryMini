@@ -4,48 +4,70 @@ using UnityEngine;
 namespace KoG.MiniMvp.World
 {
     /// <summary>
-    /// Presentation config only — stable building IDs map to Resources prefabs + footprints.
-    /// Domain (API types) never changes; swap art by replacing prefabs or flipping PreferProcedural.
+    /// Runtime facade over <see cref="BuildingArtConfig"/> (prefab GUID refs).
+    /// Domain IDs stay stable; art links live on the ScriptableObject — not string paths in C#.
     /// </summary>
     public static class BuildingArtCatalog
     {
+        public const string ConfigResourcePath = "Buildings/BuildingArtConfig";
+
         public readonly struct Entry
         {
             public readonly string TypeId;
-            public readonly string ResourcesPath;
             public readonly float Footprint;
-            /// <summary>True = Soft-GO procedural pack (Factory). False = load Resources prefab first.</summary>
             public readonly bool PreferProcedural;
+            public readonly GameObject Prefab;
+            public readonly GameObject FallbackPrefab;
 
-            public Entry(string typeId, string resourcesPath, float footprint, bool preferProcedural)
+            public Entry(
+                string typeId,
+                float footprint,
+                bool preferProcedural,
+                GameObject prefab,
+                GameObject fallbackPrefab)
             {
                 TypeId = typeId;
-                ResourcesPath = resourcesPath;
                 Footprint = footprint;
                 PreferProcedural = preferProcedural;
+                Prefab = prefab;
+                FallbackPrefab = fallbackPrefab;
             }
         }
 
-        static readonly Entry[] Entries =
-        {
-            // Resources Soft-GO prefabs ship in Mini — prefer them for one consistent look.
-            new Entry("castle", "Buildings/CastleSoftGo", 2.2f, preferProcedural: false),
-            new Entry("gold_mine", "Buildings/GoldMine", 1.35f, preferProcedural: false),
-            new Entry("barracks", "Buildings/Barracks", 1.9f, preferProcedural: false),
-        };
-
+        static BuildingArtConfig _config;
         static readonly Dictionary<string, GameObject> PrefabCache = new Dictionary<string, GameObject>(8);
+
+        /// <summary>Optional inject (tests / bootstrap). Null clears to Resources load.</summary>
+        public static void SetConfig(BuildingArtConfig config)
+        {
+            _config = config;
+            PrefabCache.Clear();
+        }
+
+        static BuildingArtConfig Config
+        {
+            get
+            {
+                if (_config == null)
+                    _config = Resources.Load<BuildingArtConfig>(ConfigResourcePath);
+                return _config;
+            }
+        }
 
         public static bool TryGet(string type, out Entry entry)
         {
-            for (var i = 0; i < Entries.Length; i++)
+            var cfg = Config;
+            if (cfg != null && cfg.TryGet(type, out var raw) && raw != null)
             {
-                if (Entries[i].TypeId == type)
-                {
-                    entry = Entries[i];
-                    return true;
-                }
+                entry = new Entry(
+                    raw.typeId,
+                    raw.footprint,
+                    raw.preferProcedural,
+                    raw.prefab,
+                    raw.fallbackPrefab);
+                return true;
             }
+
             entry = default;
             return false;
         }
@@ -56,18 +78,15 @@ namespace KoG.MiniMvp.World
         }
 
         /// <summary>
-        /// Instantiates Resources prefab when PreferProcedural is false (or forced).
+        /// Instantiates catalog prefab when PreferProcedural is false (or forced).
         /// Returns null if missing / empty mesh — caller falls back to BuildingVisualFactory.
         /// </summary>
         public static GameObject TryInstantiatePrefab(string type, int level, bool forcePrefab = false)
         {
             if (!TryGet(type, out var entry)) return null;
             if (entry.PreferProcedural && !forcePrefab) return null;
-            if (string.IsNullOrEmpty(entry.ResourcesPath)) return null;
 
-            var prefab = LoadPrefabCached(entry.ResourcesPath);
-            if (prefab == null && type == "castle")
-                prefab = LoadPrefabCached("Buildings/CastleMesh");
+            var prefab = ResolvePrefab(entry);
             if (prefab == null) return null;
 
             var go = Object.Instantiate(prefab);
@@ -93,18 +112,23 @@ namespace KoG.MiniMvp.World
             {
                 var mf = r.GetComponent<MeshFilter>();
                 if (mf != null && mf.sharedMesh != null) return true;
+                if (r is SkinnedMeshRenderer skinned && skinned.sharedMesh != null) return true;
             }
             return false;
         }
 
-        static GameObject LoadPrefabCached(string resourcesPath)
+        static GameObject ResolvePrefab(Entry entry)
         {
-            if (string.IsNullOrEmpty(resourcesPath)) return null;
-            if (PrefabCache.TryGetValue(resourcesPath, out var cached))
+            var key = entry.TypeId ?? "";
+            if (PrefabCache.TryGetValue(key, out var cached) && cached != null)
                 return cached;
-            var loaded = Resources.Load<GameObject>(resourcesPath);
-            PrefabCache[resourcesPath] = loaded;
-            return loaded;
+
+            GameObject prefab = entry.Prefab;
+            if (prefab == null)
+                prefab = entry.FallbackPrefab;
+
+            PrefabCache[key] = prefab;
+            return prefab;
         }
     }
 }

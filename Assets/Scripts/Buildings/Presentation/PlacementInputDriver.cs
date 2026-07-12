@@ -133,6 +133,12 @@ namespace KoG.MiniMvp.Buildings
 
             if (PointerInputUtil.WasReleasedThisFrame())
             {
+                // Same-frame arm+release: confirm immediately so IsRelocating cannot soft-lock pan.
+                if (_system.IsRelocating)
+                {
+                    BuildingClickRelay.SuppressClickFrames = Time.frameCount + 3;
+                    StartCoroutine(_system.ConfirmRelocate());
+                }
                 _pressBuildingId = null;
                 _relocateArmed = false;
             }
