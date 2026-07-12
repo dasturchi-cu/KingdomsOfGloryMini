@@ -197,6 +197,7 @@ namespace KoG.MiniMvp.Network
         public int nextLevel;
         public int cost;
         public int upgradeSeconds;
+        public bool finished;
         public bool finishedEarly;
         public UnlockGiftDto gift;
         public UnlockPayloadDto unlocked;

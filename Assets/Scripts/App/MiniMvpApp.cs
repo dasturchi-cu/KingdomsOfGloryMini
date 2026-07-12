@@ -222,6 +222,7 @@ namespace KoG.MiniMvp.App
             _hud.OnTrain = () => StartCoroutine(TrainTroops(10));
             _hud.OnToggleTroopType = ToggleTrainTroopType;
             _hud.OnUpgrade = () => StartCoroutine(UpgradeSelected());
+            _hud.OnSpeedup = () => StartCoroutine(SpeedupSelected());
             _hud.OnDestroyBuilding = () =>
             {
                 if (string.IsNullOrEmpty(_selectedBuildingId) ||
@@ -890,7 +891,7 @@ namespace KoG.MiniMvp.App
                 }
                 else
                 {
-                    _housingUsed = _barbarianCount;
+                    _housingUsed = _barbarianCount + _archerCount;
                     _housingMax = 50 + Math.Max(1, _castleLevel) * 50;
                 }
 
@@ -1097,7 +1098,9 @@ namespace KoG.MiniMvp.App
 
         IEnumerator ChatSendAndRefresh()
         {
-            yield return _social.SendGlobalChat();
+            var draft = _hud != null ? _hud.ChatDraft : "";
+            yield return _social.SendGlobalChat(draft);
+            if (_hud != null && !string.IsNullOrEmpty(draft)) _hud.ChatDraft = "";
             yield return _social.RefreshChatHistory(summary =>
             {
                 if (_hud != null)
@@ -1178,6 +1181,31 @@ namespace KoG.MiniMvp.App
                 SetStatus("Qal’a L" + _castleLevel + " — yangi: " + labels);
                 WorldFeedback.FloatLabel(FieldCenter + Vector3.up * 2f,
                     "Castle L" + _castleLevel, new Color(1f, 0.92f, 0.4f));
+                if (_hud != null)
+                {
+                    _hud.SetUnlockBody(BuildUnlockSheetText());
+                    _hud.ShowUnlockSheet(true);
+                }
+            }
+        }
+
+        IEnumerator SpeedupSelected()
+        {
+            EnsureBuildingSystem();
+            if (_buildings == null)
+            {
+                SetStatus("Building system yo'q");
+                yield break;
+            }
+
+            var prevCastle = _castleLevel;
+            SetBusy(true);
+            yield return _buildings.SpeedupSelected(_selectedBuildingId);
+            SetBusy(false);
+            yield return LoadPlayerState();
+            if (_castleLevel > prevCastle)
+            {
+                SetStatus("Tezkor — Qal’a L" + _castleLevel);
                 if (_hud != null)
                 {
                     _hud.SetUnlockBody(BuildUnlockSheetText());
@@ -1442,7 +1470,8 @@ namespace KoG.MiniMvp.App
 
         IEnumerator StartRaid()
         {
-            if (_barbarianCount < 1)
+            var army = _barbarianCount + _archerCount;
+            if (army < 1)
             {
                 SetStatus("Reyd uchun askar kerak — avval Askar ×10");
                 MiniAudio.PlayError();
@@ -1452,7 +1481,7 @@ namespace KoG.MiniMvp.App
             _raidFortressId = PickRaidFortress();
             // Soft-test: Camp 2/3 need more than 10 barbs for ≥1★ (see pveSimulator layouts).
             const int MaxRaidDeploy = 40;
-            _raidDeployCount = Mathf.Clamp(_barbarianCount, 1, MaxRaidDeploy);
+            _raidDeployCount = Mathf.Clamp(army, 1, MaxRaidDeploy);
 
             SetBusy(true);
             SetStatus("Reyd Lager " + _raidFortressId + "…");
@@ -1563,15 +1592,24 @@ namespace KoG.MiniMvp.App
                 _hud.SetRaidHud(0, 0, 0);
             }
 
-            var deploy = Math.Max(1, Math.Min(_raidDeployCount, Math.Max(1, _barbarianCount)));
+            var army = _barbarianCount + _archerCount;
+            var deploy = Math.Max(1, Math.Min(_raidDeployCount, Math.Max(1, army)));
+            var barbs = Math.Min(_barbarianCount, deploy);
+            var archers = Math.Min(_archerCount, deploy - barbs);
             var sb = new StringBuilder();
             sb.Append("{\"playerId\":\"").Append(SessionStore.PlayerId)
               .Append("\",\"fortressId\":").Append(_raidFortressId)
               .Append(",\"starsEarned\":1,\"deployTicks\":[");
-            for (var i = 0; i < deploy; i++)
+            var wrote = 0;
+            for (var i = 0; i < barbs; i++)
             {
-                if (i > 0) sb.Append(',');
+                if (wrote++ > 0) sb.Append(',');
                 sb.Append("{\"troopType\":\"barbarian\"}");
+            }
+            for (var i = 0; i < archers; i++)
+            {
+                if (wrote++ > 0) sb.Append(',');
+                sb.Append("{\"troopType\":\"archer\"}");
             }
             sb.Append("]}");
 
@@ -1633,13 +1671,17 @@ namespace KoG.MiniMvp.App
             {
                 foreach (var t in res.troopsConsumed)
                 {
-                    if (t != null && t.type == "barbarian")
+                    if (t == null) continue;
+                    if (t.type == "barbarian")
                         _barbarianCount = Math.Max(0, _barbarianCount - t.quantity);
+                    else if (t.type == "archer")
+                        _archerCount = Math.Max(0, _archerCount - t.quantity);
                 }
             }
             else
             {
-                _barbarianCount = Math.Max(0, _barbarianCount - deploy);
+                _barbarianCount = Math.Max(0, _barbarianCount - barbs);
+                _archerCount = Math.Max(0, _archerCount - archers);
             }
             SyncTroopVisuals();
             RefreshHud();

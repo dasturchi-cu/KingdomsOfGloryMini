@@ -79,7 +79,7 @@ namespace KoG.MiniMvp.Buildings
                 return null;
 
             if (_timer.TryGetRemaining(buildingId, out var left))
-                return left <= 0 ? "Qurilish tayyor — Upgrade bosing" : "Qurilish: " + left + "s";
+                return left <= 0 ? "Qurilish tayyor — Yangila (tugatish)" : "Qurilish: " + left + "s";
 
             if (inst.ConstructionSecondsLeft > 0)
             {
@@ -271,17 +271,58 @@ namespace KoG.MiniMvp.Buildings
                         return;
                     }
 
-                    if (text != null && text.IndexOf("finishedEarly", StringComparison.Ordinal) >= 0)
-                        Emit("Upgrade tayyor (instant)");
+                    if (text != null && (text.IndexOf("\"finished\":true", StringComparison.Ordinal) >= 0
+                        || text.IndexOf("finishedEarly", StringComparison.Ordinal) >= 0))
+                    {
+                        var done = JsonUtility.FromJson<UpgradeResponse>(text);
+                        Emit("Qurilish tugadi — L" + Math.Max(1, done.nextLevel));
+                        _timer.Clear();
+                    }
                     else if (text != null && text.IndexOf("upgradeSeconds", StringComparison.Ordinal) >= 0)
                     {
                         var res = JsonUtility.FromJson<UpgradeResponse>(text);
-                        Emit("Upgrade boshlandi (" + res.upgradeSeconds + "s) — yana Upgrade = tugatish");
+                        Emit("Yangilandi (" + res.upgradeSeconds + "s) — kuting yoki Tezkor ◇");
                         _timer.SyncFromServer(buildingId, Math.Max(1, res.upgradeSeconds));
                     }
                     else
-                        Emit("Upgrade boshlandi");
+                        Emit("Yangilash boshlandi");
 
+                    MutationSucceeded?.Invoke();
+                    StateChanged?.Invoke();
+                });
+        }
+
+        public IEnumerator SpeedupSelected(string buildingId)
+        {
+            if (string.IsNullOrEmpty(buildingId))
+            {
+                Emit("Avval binoni tanlang");
+                yield break;
+            }
+
+            _busy = true;
+            Emit("Tezkor ◇…");
+            var body = BuildingJson.Object(
+                ("playerId", _playerId()),
+                ("buildingId", buildingId)
+            );
+
+            yield return _api.PostJson(
+                "/api/v1/buildings/speedup",
+                body,
+                _token(),
+                ApiClient.NewIdempotencyKey(),
+                (code, text) =>
+                {
+                    _busy = false;
+                    if (code < 200 || code >= 300)
+                    {
+                        Emit("Tezkor xato: " + BuildingJson.ExtractError(text));
+                        return;
+                    }
+
+                    _timer.Clear();
+                    Emit("Tezkor tugadi");
                     MutationSucceeded?.Invoke();
                     StateChanged?.Invoke();
                 });

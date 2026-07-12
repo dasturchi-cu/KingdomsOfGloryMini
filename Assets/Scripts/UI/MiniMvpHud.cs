@@ -47,6 +47,7 @@ namespace KoG.MiniMvp.UI
         Text _pvpResultLabel;
         Text _tournamentBracketLabel;
         InputField _clanJoinField;
+        InputField _chatDraftField;
         Text _resultBody;
         Text _resultStars;
         Text _resultLoot;
@@ -67,6 +68,7 @@ namespace KoG.MiniMvp.UI
         public Action OnCollect;
         public Action OnTrain;
         public Action OnUpgrade;
+        public Action OnSpeedup;
         public Action OnConfirmPlace;
         public Action OnCancelPlace;
         public Action OnRotatePlace;
@@ -107,6 +109,14 @@ namespace KoG.MiniMvp.UI
         public Action OnTournamentRefresh;
 
         public string ClanJoinId => _clanJoinField != null ? (_clanJoinField.text ?? "").Trim() : "";
+        public string ChatDraft
+        {
+            get => _chatDraftField != null ? (_chatDraftField.text ?? "").Trim() : "";
+            set
+            {
+                if (_chatDraftField != null) _chatDraftField.text = value ?? "";
+            }
+        }
 
         GameObject _placementBar;
         GameObject _buildActionBar;
@@ -722,6 +732,8 @@ namespace KoG.MiniMvp.UI
                 new Color(0.35f, 0.42f, 0.22f), () => Safe(OnRepairBuilding));
             MakeBtn(_buildActionBar.transform, "CancelUpg", "Bekor yangi", ref bx, 0f, bw, gap, btnH,
                 new Color(0.42f, 0.32f, 0.18f), () => Safe(OnCancelUpgrade));
+            MakeBtn(_buildActionBar.transform, "Speedup", "Tezkor ◇", ref bx, 0f, bw, gap, btnH,
+                new Color(0.22f, 0.48f, 0.52f), () => Safe(OnSpeedup));
 
             _loopActionBar = new GameObject("LoopActionBar", typeof(RectTransform));
             _loopActionBar.transform.SetParent(_gameRoot.transform, false);
@@ -1005,7 +1017,11 @@ namespace KoG.MiniMvp.UI
             Label(sheet, "ChatTitle", "Chat", 24, TextAnchor.UpperLeft,
                 new Vector2(28f, -20f), new Vector2(400f, 32f), new Color(1f, 0.9f, 0.55f));
             _chatHistoryLabel = Label(sheet, "ChatHist", "Yangila bosing…", 16, TextAnchor.UpperLeft,
-                new Vector2(28f, -70f), new Vector2(660f, 240f), new Color(0.85f, 0.90f, 0.95f));
+                new Vector2(28f, -58f), new Vector2(660f, 200f), new Color(0.85f, 0.90f, 0.95f));
+
+            _chatDraftField = Field(sheet, "Xabar", "Salom!", new Vector2(-90f, -268f), false);
+            var draftRt = _chatDraftField.GetComponent<RectTransform>();
+            draftRt.sizeDelta = new Vector2(520f, 40f);
 
             const float bw = 180f;
             const float gap = 12f;

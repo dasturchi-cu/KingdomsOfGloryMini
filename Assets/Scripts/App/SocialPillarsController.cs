@@ -227,7 +227,7 @@ namespace KoG.MiniMvp.App
             }
         }
 
-        public IEnumerator SendGlobalChat()
+        public IEnumerator SendGlobalChat(string draft = null)
         {
             if (_api == null || !SessionStore.HasSession)
             {
@@ -237,7 +237,11 @@ namespace KoG.MiniMvp.App
 
             _setBusy?.Invoke(true);
             _setStatus?.Invoke("Chat yuborilmoqda...");
-            var msg = "Salom KoG! " + DateTime.UtcNow.ToString("HH:mm:ss");
+            var trimmed = (draft ?? "").Trim();
+            if (trimmed.Length > 120) trimmed = trimmed.Substring(0, 120);
+            var msg = string.IsNullOrEmpty(trimmed)
+                ? "Salom KoG! " + DateTime.UtcNow.ToString("HH:mm:ss")
+                : trimmed;
             var body = Json(
                 ("channelType", "global"),
                 ("body", msg),
