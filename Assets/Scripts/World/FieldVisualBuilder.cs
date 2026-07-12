@@ -124,8 +124,10 @@ namespace KoG.MiniMvp.World
                 if (floor != null) MarkStatic(floor.gameObject);
             }
 
-            // Decorations reserved for future authored props — do not procedural-redesign here.
-            _ = decorations;
+            // P2-density: thin props near castle ring (presentation only).
+            BaseDensityDeco.Build(decorations.transform, fieldCenter, fieldWorldSize);
+            // P2-walls: thin perimeter framing the playable field.
+            BaseWallsDeco.Build(decorations.transform, fieldCenter, fieldWorldSize);
 
             BuildingGrid.Build(gameplay.transform, gridSize, cellSize, fieldCenter);
             // Camera/Sun parenting happens after MiniMvpApp creates them — see FinalizeHierarchy.
