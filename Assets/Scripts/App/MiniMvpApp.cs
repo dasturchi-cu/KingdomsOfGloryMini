@@ -53,9 +53,16 @@ namespace KoG.MiniMvp.App
         long _mana;
         long _diamond;
         int _barbarianCount;
+        int _castleLevel = 1;
+        int _campaignMax = 1;
+        int _raidFortressId = 1;
+        int _raidDeployCount;
+        CampaignDto[] _campaigns;
+        string[] _placeableUnlocks = { "gold_mine" };
         float _raidStartedAt = -999f;
         bool _raidActive;
         Coroutine _raidCountdownCo;
+        Coroutine _trainWaitCo;
         string _pendingDestroyId;
         int _stateLoadGen;
         string _selectedBuildingId;
@@ -329,11 +336,37 @@ namespace KoG.MiniMvp.App
         {
             EnsureBuildingSystem();
             if (_buildings == null) return;
+
+            if (!IsPlaceUnlocked(buildingType))
+            {
+                var need = buildingType == "barracks" ? 2 : 1;
+                SetStatus(buildingType == "barracks"
+                    ? "Kazarma uchun Qal’a L2 kerak — avval Yangila"
+                    : "Kon uchun Qal’a L" + need + " kerak");
+                MiniAudio.PlayError();
+                return;
+            }
+
             if (_buildings.BeginPlacement(buildingType))
             {
                 if (_hud != null) _hud.SetPlacementMode(true);
                 if (_troopInput != null) _troopInput.SetEnabled(false);
             }
+        }
+
+        bool IsPlaceUnlocked(string buildingType)
+        {
+            if (_placeableUnlocks != null)
+            {
+                for (var i = 0; i < _placeableUnlocks.Length; i++)
+                {
+                    if (_placeableUnlocks[i] == buildingType) return true;
+                }
+            }
+
+            if (buildingType == "gold_mine") return _castleLevel >= 1;
+            if (buildingType == "barracks") return _castleLevel >= 2;
+            return false;
         }
 
         IEnumerator ConfirmPlaceAndReload()
@@ -670,7 +703,7 @@ namespace KoG.MiniMvp.App
                 EnsureSaveSystem();
                 _save?.SyncFromCloud(res.playerId);
                 SetScreen(UiScreen.Game);
-                SetStatus("Ro‘yxat OK. Endi Kon → Tasdiq.");
+                SetStatus("Ro‘yxat OK. Faqat qal’a — Keyingi: Kon → Tasdiq. ◆ Mana = askar.");
                 StartCoroutine(LoadPlayerState());
             });
         }
@@ -731,7 +764,21 @@ namespace KoG.MiniMvp.App
                     _gold = state.player.gold;
                     _mana = state.player.mana;
                     _diamond = state.player.diamond;
+                    _castleLevel = Math.Max(1, state.player.castleLevel);
                 }
+
+                if (state.unlocks != null)
+                {
+                    if (state.unlocks.placeable != null && state.unlocks.placeable.Length > 0)
+                        _placeableUnlocks = state.unlocks.placeable;
+                    _campaignMax = Math.Max(1, state.unlocks.campaignMax);
+                }
+                else
+                {
+                    _campaignMax = _castleLevel >= 4 ? 3 : (_castleLevel >= 3 ? 2 : 1);
+                }
+
+                _campaigns = state.campaigns;
 
                 _barbarianCount = 0;
                 if (state.troops != null)
@@ -784,7 +831,26 @@ namespace KoG.MiniMvp.App
                     Debug.LogWarning("[MiniMvp] Server castle missing — spawned center fallback");
                 }
 
-                SetStatus(BuildNextStepHint(hasMine, hasBarracks, buildingCount));
+                if (state.goal != null && !string.IsNullOrEmpty(state.goal.title))
+                {
+                    if (_hud != null) _hud.SetGoal(state.goal.title, state.goal.cta);
+                    SetStatus(state.goal.title + (string.IsNullOrEmpty(state.goal.cta) ? "" : " · " + state.goal.cta));
+                }
+                else
+                {
+                    var hint = BuildNextStepHint(hasMine, hasBarracks, buildingCount);
+                    if (_hud != null) _hud.SetGoal(hint, "");
+                    SetStatus(hint);
+                }
+
+                if (state.training != null && state.training.pending)
+                {
+                    SetStatus("Askar tayyorlanmoqda… " + state.training.secondsLeft + "s (" +
+                              state.training.quantity + " " + state.training.troopType + ")");
+                    if (_trainWaitCo != null) StopCoroutine(_trainWaitCo);
+                    _trainWaitCo = StartCoroutine(WaitTrainingThenReload(state.training.secondsLeft));
+                }
+
                 FrameCameraOnBase();
                 if (!string.IsNullOrEmpty(_selectedBuildingId) &&
                     _buildingViews.TryGetValue(_selectedBuildingId, out var selGo))
@@ -796,6 +862,14 @@ namespace KoG.MiniMvp.App
                 EnsureSaveSystem();
                 _save.CapturePlayerState(state);
             });
+        }
+
+        IEnumerator WaitTrainingThenReload(int seconds)
+        {
+            var wait = Mathf.Clamp(seconds, 1, 120);
+            yield return new WaitForSecondsRealtime(wait + 0.35f);
+            _trainWaitCo = null;
+            yield return LoadPlayerState();
         }
 
         static BuildingViewSync.BuildingDtoLite[] ToLite(BuildingDto[] buildings)
@@ -831,8 +905,8 @@ namespace KoG.MiniMvp.App
         static string BuildNextStepHint(bool hasMine, bool hasBarracks, int buildingCount)
         {
             if (!hasMine) return "Baza OK (" + buildingCount + " bino). Keyingi: Kon → Tasdiq";
-            if (!hasBarracks) return "Kon bor. Keyingi: Kazarma → Tasdiq";
-            return "Kon+Kazarma bor. Keyingi: Yig‘ish → Askar → Reyd";
+            if (!hasBarracks) return "Kon bor. Keyingi: Qal’a L2 → Kazarma";
+            return "Kon+Kazarma bor. Keyingi: Yig‘ish → Askar (mana) → Reyd";
         }
 
         IEnumerator UpgradeSelected()
@@ -844,10 +918,21 @@ namespace KoG.MiniMvp.App
                 yield break;
             }
 
+            var prevCastle = _castleLevel;
             SetBusy(true);
             yield return _buildings.UpgradeSelected(_selectedBuildingId);
             SetBusy(false);
             yield return LoadPlayerState();
+            if (_castleLevel > prevCastle)
+            {
+                var labels = _castleLevel == 2 ? "Kazarma + Askar"
+                    : _castleLevel == 3 ? "Lager 2"
+                    : _castleLevel == 4 ? "Archer + Lager 3"
+                    : ("L" + _castleLevel);
+                SetStatus("Qal’a L" + _castleLevel + " — yangi: " + labels);
+                WorldFeedback.FloatLabel(FieldCenter + Vector3.up * 2f,
+                    "Castle L" + _castleLevel, new Color(1f, 0.92f, 0.4f));
+            }
         }
 
         IEnumerator DestroySelected()
@@ -940,14 +1025,23 @@ namespace KoG.MiniMvp.App
 
         IEnumerator TrainTroops(int quantity)
         {
+            if (_castleLevel < 2)
+            {
+                SetStatus("Askar uchun Qal’a L2 + Kazarma kerak");
+                MiniAudio.PlayError();
+                yield break;
+            }
+
             SetBusy(true);
-            SetStatus("Askar tayyorlanmoqda…");
+            SetStatus("Askar navbatga… (◆ mana)");
             var body = JsonObject(
                 ("playerId", SessionStore.PlayerId),
                 ("troopType", "barbarian"),
                 ("quantity", quantity.ToString())
             );
 
+            TrainResponse res = null;
+            var ok = false;
             yield return _api.PostJson("/api/v1/troops/train", body, SessionStore.Token,
                 ApiClient.NewIdempotencyKey(), (code, text) =>
             {
@@ -955,38 +1049,80 @@ namespace KoG.MiniMvp.App
                 if (code < 200 || code >= 300)
                 {
                     MiniAudio.PlayError();
-                    SetStatus("Askar xato: " + ExtractError(text) + " (avval Kazarma + mana)");
+                    SetStatus("Askar xato: " + ExtractError(text) + " (Kazarma + mana + L2)");
                     return;
                 }
 
-                var res = JsonUtility.FromJson<TrainResponse>(text);
-                _barbarianCount += res.trainedQuantity;
-                if (res.totalCostMana > 0) _mana = Math.Max(0, _mana - res.totalCostMana);
-                Vector3 floatPos = FieldCenter + Vector3.up;
-                foreach (var v in _buildingViews.Values)
-                {
-                    var m = v != null ? v.GetComponent<BuildingMarker>() : null;
-                    if (m != null && m.buildingType == "barracks")
-                    {
-                        floatPos = v.transform.position + Vector3.up * 1.2f;
-                        break;
-                    }
-                }
-                WorldFeedback.FloatLabel(floatPos, "+" + res.trainedQuantity + " ⚔", new Color(0.7f, 0.9f, 1f));
-                MiniAudio.PlayTrainDone();
-                SetStatus("Askar +" + res.trainedQuantity + " · jami " + _barbarianCount);
-                SyncTroopVisuals();
-                RefreshHud();
+                res = JsonUtility.FromJson<TrainResponse>(text);
+                ok = true;
             });
+
+            if (!ok || res == null) yield break;
+
+            if (res.totalCostMana > 0) _mana = Math.Max(0, _mana - res.totalCostMana);
+            RefreshHud();
+
+            if (res.training && res.trainSeconds > 0)
+            {
+                SetStatus("Askar tayyorlanmoqda… " + res.trainSeconds + "s (×" + res.pendingQuantity + ")");
+                if (_trainWaitCo != null) StopCoroutine(_trainWaitCo);
+                _trainWaitCo = StartCoroutine(WaitTrainingThenReload(res.trainSeconds));
+                yield break;
+            }
+
+            _barbarianCount += res.trainedQuantity;
+            Vector3 floatPos = FieldCenter + Vector3.up;
+            foreach (var v in _buildingViews.Values)
+            {
+                var m = v != null ? v.GetComponent<BuildingMarker>() : null;
+                if (m != null && m.buildingType == "barracks")
+                {
+                    floatPos = v.transform.position + Vector3.up * 1.2f;
+                    break;
+                }
+            }
+            WorldFeedback.FloatLabel(floatPos, "+" + res.trainedQuantity + " ⚔", new Color(0.7f, 0.9f, 1f));
+            MiniAudio.PlayTrainDone();
+            SetStatus("Askar +" + res.trainedQuantity + " · jami " + _barbarianCount);
+            SyncTroopVisuals();
+            RefreshHud();
+            yield return LoadPlayerState();
+        }
+
+        int PickRaidFortress()
+        {
+            var max = Math.Max(1, Math.Min(_campaignMax, 3));
+            var bestCleared = 0;
+            if (_campaigns != null)
+            {
+                foreach (var c in _campaigns)
+                {
+                    if (c != null && c.starsEarned > 0 && c.fortressId > bestCleared)
+                        bestCleared = c.fortressId;
+                }
+            }
+
+            var next = Math.Min(max, bestCleared + 1);
+            return Math.Max(1, next);
         }
 
         IEnumerator StartRaid()
         {
+            if (_barbarianCount < 1)
+            {
+                SetStatus("Reyd uchun askar kerak — avval Askar ×10");
+                MiniAudio.PlayError();
+                yield break;
+            }
+
+            _raidFortressId = PickRaidFortress();
+            _raidDeployCount = Mathf.Clamp(_barbarianCount, 1, 10);
+
             SetBusy(true);
-            SetStatus("Reyd boshlanmoqda…");
+            SetStatus("Reyd Lager " + _raidFortressId + "…");
             var body = JsonObject(
                 ("playerId", SessionStore.PlayerId),
-                ("fortressId", "1")
+                ("fortressId", _raidFortressId.ToString())
             );
 
             var ok = false;
@@ -996,20 +1132,23 @@ namespace KoG.MiniMvp.App
                 if (code < 200 || code >= 300)
                 {
                     MiniAudio.PlayError();
-                    SetStatus("Reyd start xato: " + ExtractError(text) + " (askar kerak)");
+                    SetStatus("Reyd start xato: " + ExtractError(text));
                     return;
                 }
 
                 ok = true;
                 _raidStartedAt = Time.realtimeSinceStartup;
                 _raidActive = true;
-                if (_hud != null) _hud.SetRaidCompleteReady(false, 30);
-                SetStatus("Raid boshlandi — 30 soniya…");
+                if (_hud != null)
+                {
+                    _hud.SetRaidCompleteReady(false, 30);
+                    _hud.SetRaidHud(_raidFortressId, _raidDeployCount, 100);
+                }
+                SetStatus("Reyd: Lager " + _raidFortressId + " · " + _raidDeployCount + " askar · 30s");
             });
 
             if (!ok) yield break;
 
-            // Client juice only — server session already started.
             var from = FindBuildingWorldPos("barracks");
             if (from.sqrMagnitude < 0.01f) from = FieldCenter;
             var camp = FieldCenter + new Vector3(4.5f, 0f, 4.5f);
@@ -1026,13 +1165,24 @@ namespace KoG.MiniMvp.App
             {
                 var left = wait - (Time.realtimeSinceStartup - _raidStartedAt);
                 if (left <= 0f) break;
-                if (_hud != null) _hud.SetRaidCompleteReady(false, Mathf.CeilToInt(left));
-                SetStatus("Reyd: " + Mathf.CeilToInt(left) + "s…");
+                var elapsed = wait - Mathf.Max(0f, left);
+                // Visual HP drain from deploy power (honest feedback; server still authoritative).
+                var hp = Mathf.Clamp(100 - Mathf.RoundToInt((elapsed / wait) * (40 + _raidDeployCount * 5)), 5, 100);
+                if (_hud != null)
+                {
+                    _hud.SetRaidCompleteReady(false, Mathf.CeilToInt(left));
+                    _hud.SetRaidHud(_raidFortressId, _raidDeployCount, hp);
+                }
+                SetStatus("Reyd L" + _raidFortressId + ": " + Mathf.CeilToInt(left) + "s · HP " + hp + "%");
                 yield return new WaitForSecondsRealtime(0.25f);
             }
 
             if (!_raidActive) yield break;
-            if (_hud != null) _hud.SetRaidCompleteReady(true, 0);
+            if (_hud != null)
+            {
+                _hud.SetRaidCompleteReady(true, 0);
+                _hud.SetRaidHud(_raidFortressId, _raidDeployCount, 15);
+            }
             SetStatus("Reyd tayyor — Yakunla yoki avto…");
             yield return new WaitForSecondsRealtime(0.35f);
             if (_raidActive)
@@ -1062,20 +1212,31 @@ namespace KoG.MiniMvp.App
                 StopCoroutine(_raidCountdownCo);
                 _raidCountdownCo = null;
             }
-            if (_hud != null) _hud.SetRaidCompleteReady(false, 0);
+            if (_hud != null)
+            {
+                _hud.SetRaidCompleteReady(false, 0);
+                _hud.SetRaidHud(0, 0, 0);
+            }
+
+            var deploy = Math.Max(1, Math.Min(_raidDeployCount, Math.Max(1, _barbarianCount)));
+            var sb = new StringBuilder();
+            sb.Append("{\"playerId\":\"").Append(SessionStore.PlayerId)
+              .Append("\",\"fortressId\":").Append(_raidFortressId)
+              .Append(",\"starsEarned\":1,\"deployTicks\":[");
+            for (var i = 0; i < deploy; i++)
+            {
+                if (i > 0) sb.Append(',');
+                sb.Append("{\"troopType\":\"barbarian\"}");
+            }
+            sb.Append("]}");
 
             SetBusy(true);
             SetStatus("Completing raid...");
-            // Payload unchanged — presentation does not alter stars/troops/server math.
-            var body =
-                "{\"playerId\":\"" + SessionStore.PlayerId +
-                "\",\"fortressId\":1,\"starsEarned\":1,\"deployTicks\":[{\"troopType\":\"barbarian\"},{\"troopType\":\"barbarian\"},{\"troopType\":\"barbarian\"},{\"troopType\":\"barbarian\"},{\"troopType\":\"barbarian\"},{\"troopType\":\"barbarian\"},{\"troopType\":\"barbarian\"},{\"troopType\":\"barbarian\"},{\"troopType\":\"barbarian\"},{\"troopType\":\"barbarian\"}]}";
-
             CampaignCompleteResponse res = null;
             var ok = false;
             yield return _api.PostJson(
                 "/api/v1/campaign/complete",
-                body,
+                sb.ToString(),
                 SessionStore.Token,
                 ApiClient.NewIdempotencyKey(),
                 (code, text) =>
@@ -1098,8 +1259,10 @@ namespace KoG.MiniMvp.App
             var stars = res.battleResult != null ? res.battleResult.stars : res.starsEarned;
             var loot = res.loot != null ? res.loot.gold : 0;
             var won = stars > 0;
+            var clearTag = res.firstClear ? " (birinchi)" : " (qayta)";
             _resultMessage = won
-                ? "G‘alaba!\n★ " + stars + "\nLoot: +" + loot + " ●\nBalans: " + _gold
+                ? "G‘alaba!\nLager " + _raidFortressId + "\n★ " + stars +
+                  "\nLoot: +" + loot + " ●" + clearTag + "\nBalans: " + _gold
                 : "Mag‘lubiyat\nLoot: 0\nBalans: " + _gold;
 
             if (won)
@@ -1116,6 +1279,19 @@ namespace KoG.MiniMvp.App
             SetScreen(UiScreen.Result);
             if (_hud != null) _hud.SetResultChips(stars, loot, won);
             SetStatus(won ? "Reyd yakunlandi" : "Reyd mag‘lubiyat");
+            if (res.troopsConsumed != null)
+            {
+                foreach (var t in res.troopsConsumed)
+                {
+                    if (t != null && t.type == "barbarian")
+                        _barbarianCount = Math.Max(0, _barbarianCount - t.quantity);
+                }
+            }
+            else
+            {
+                _barbarianCount = Math.Max(0, _barbarianCount - deploy);
+            }
+            SyncTroopVisuals();
             RefreshHud();
         }
 

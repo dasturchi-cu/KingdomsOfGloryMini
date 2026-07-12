@@ -17,6 +17,8 @@ namespace KoG.MiniMvp.UI
 
         Text _title;
         Text _status;
+        Text _goalCard;
+        Text _raidHud;
         Text _goldChip;
         Text _manaChip;
         Text _diamondChip;
@@ -24,6 +26,7 @@ namespace KoG.MiniMvp.UI
         Text _selectedChip;
         Text _busyLabel;
         Text _errorLabel;
+        Text _manaTip;
         GameObject _authRoot;
         GameObject _gameRoot;
         GameObject _resultRoot;
@@ -120,6 +123,33 @@ namespace KoG.MiniMvp.UI
         public void SetStatus(string status)
         {
             if (_status != null) _status.text = status ?? "";
+        }
+
+        public void SetGoal(string title, string cta)
+        {
+            if (_goalCard == null) return;
+            if (string.IsNullOrEmpty(title))
+            {
+                _goalCard.text = "";
+                return;
+            }
+
+            _goalCard.text = string.IsNullOrEmpty(cta)
+                ? title
+                : title + "  ·  " + cta;
+        }
+
+        public void SetRaidHud(int fortressId, int deployCount, int hpPercent)
+        {
+            if (_raidHud == null) return;
+            if (fortressId <= 0)
+            {
+                _raidHud.text = "";
+                return;
+            }
+
+            var hp = Mathf.Clamp(hpPercent, 0, 100);
+            _raidHud.text = "Lager " + fortressId + "  ·  Deploy " + deployCount + "  ·  HP " + hp + "%";
         }
 
         public void ShowError(string message, bool showRetry)
@@ -262,11 +292,11 @@ namespace KoG.MiniMvp.UI
 
             var top = Panel(root, "TopBar",
                 new Vector2(0f, 1f), new Vector2(1f, 1f),
-                new Vector2(0f, -10f), new Vector2(-24f, 128f),
+                new Vector2(0f, -10f), new Vector2(-24f, 168f),
                 new Color(0.05f, 0.07f, 0.10f, 0.88f));
             top.pivot = new Vector2(0.5f, 1f);
             top.anchoredPosition = new Vector2(0f, -10f);
-            top.sizeDelta = new Vector2(-24f, 128f);
+            top.sizeDelta = new Vector2(-24f, 168f);
 
             _title = Label(top.transform, "Title", "Kingdoms of Glory", 22, TextAnchor.UpperLeft,
                 new Vector2(16f, -10f), new Vector2(360f, 28f), new Color(1f, 0.90f, 0.48f));
@@ -292,9 +322,15 @@ namespace KoG.MiniMvp.UI
                 new Color(0.38f, 0.26f, 0.06f, 0.95f), new Color(1f, 0.88f, 0.28f), -346f, 110f);
 
             _status = Label(top.transform, "Status", "Guest bilan boshlang", 16, TextAnchor.UpperLeft,
-                new Vector2(16f, -48f), new Vector2(980f, 30f), new Color(0.96f, 0.94f, 0.82f));
-            _selectedChip = Label(top.transform, "Selected", "Tanlangan: —", 15, TextAnchor.UpperLeft,
-                new Vector2(16f, -82f), new Vector2(700f, 26f), new Color(0.68f, 0.84f, 1f));
+                new Vector2(16f, -48f), new Vector2(980f, 28f), new Color(0.96f, 0.94f, 0.82f));
+            _goalCard = Label(top.transform, "Goal", "Maqsad: Kon qo‘ying  ·  Kon → Tasdiq", 15, TextAnchor.UpperLeft,
+                new Vector2(16f, -78f), new Vector2(980f, 26f), new Color(0.55f, 0.95f, 0.72f));
+            _selectedChip = Label(top.transform, "Selected", "Tanlangan: —", 14, TextAnchor.UpperLeft,
+                new Vector2(16f, -106f), new Vector2(520f, 24f), new Color(0.68f, 0.84f, 1f));
+            _raidHud = Label(top.transform, "RaidHud", "", 14, TextAnchor.UpperLeft,
+                new Vector2(540f, -106f), new Vector2(460f, 24f), new Color(1f, 0.72f, 0.55f));
+            _manaTip = Label(top.transform, "ManaTip", "◆ Mana = askar · ● Gold = qurilish", 13, TextAnchor.UpperLeft,
+                new Vector2(16f, -132f), new Vector2(700f, 22f), new Color(0.70f, 0.78f, 0.86f));
 
             BuildErrorBanner(root);
             BuildAuthPanel(root);
@@ -308,7 +344,7 @@ namespace KoG.MiniMvp.UI
         {
             var banner = Panel(root, "ErrorBanner",
                 new Vector2(0.5f, 1f), new Vector2(0.5f, 1f),
-                new Vector2(0f, -148f), new Vector2(1000f, 72f),
+                new Vector2(0f, -188f), new Vector2(1000f, 72f),
                 new Color(0.42f, 0.12f, 0.10f, 0.96f));
             banner.pivot = new Vector2(0.5f, 1f);
             _errorBanner = banner.gameObject;

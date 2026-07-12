@@ -32,6 +32,34 @@ namespace KoG.MiniMvp.Network
         public BuildingDto[] buildings;
         public TroopDto[] troops;
         public CampaignDto[] campaigns;
+        public UnlockDto unlocks;
+        public GoalDto goal;
+        public TrainingDto training;
+    }
+
+    [Serializable]
+    public class UnlockDto
+    {
+        public string[] placeable;
+        public string[] troops;
+        public int campaignMax;
+        public string[] labels;
+    }
+
+    [Serializable]
+    public class GoalDto
+    {
+        public string title;
+        public string cta;
+    }
+
+    [Serializable]
+    public class TrainingDto
+    {
+        public bool pending;
+        public string troopType;
+        public int quantity;
+        public int secondsLeft;
     }
 
     [Serializable]
@@ -109,6 +137,9 @@ namespace KoG.MiniMvp.Network
     {
         public bool success;
         public int trainedQuantity;
+        public int pendingQuantity;
+        public int trainSeconds;
+        public bool training;
         public int totalCostMana;
         public string message;
         public string error;
@@ -122,8 +153,27 @@ namespace KoG.MiniMvp.Network
         public int cost;
         public int upgradeSeconds;
         public bool finishedEarly;
+        public UnlockGiftDto gift;
+        public UnlockPayloadDto unlocked;
         public string message;
         public string error;
+    }
+
+    [Serializable]
+    public class UnlockGiftDto
+    {
+        public long gold;
+        public long mana;
+        public long diamond;
+    }
+
+    [Serializable]
+    public class UnlockPayloadDto
+    {
+        public string[] placeable;
+        public string[] troops;
+        public int campaignMax;
+        public string[] labels;
     }
 
     [Serializable]
@@ -156,6 +206,8 @@ namespace KoG.MiniMvp.Network
         public BattleResultDto battleResult;
         public LootDto loot;
         public long goldBalance;
+        public bool firstClear;
+        public TroopDto[] troopsConsumed;
         public string message;
         public string error;
     }
