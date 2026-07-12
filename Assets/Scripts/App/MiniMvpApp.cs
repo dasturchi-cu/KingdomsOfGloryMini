@@ -134,16 +134,30 @@ namespace KoG.MiniMvp.App
 
         string ResolveBaseUrl()
         {
+            // Soft-test phone installs: set PlayerPrefs "kog_api_base" to staging/LAN HTTPS (or http in DEV).
+            var prefsUrl = PlayerPrefs.GetString("kog_api_base", string.Empty).Trim();
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
-            // Keep releaseBaseUrl referenced so Inspector value is not stripped / CS0414-warned.
             _ = releaseBaseUrl;
-            return string.IsNullOrWhiteSpace(baseUrl) ? "http://127.0.0.1:3000" : baseUrl.Trim();
+            if (!string.IsNullOrEmpty(prefsUrl))
+                return prefsUrl.TrimEnd('/');
+            return string.IsNullOrWhiteSpace(baseUrl) ? "http://127.0.0.1:3000" : baseUrl.Trim().TrimEnd('/');
 #else
+            if (!string.IsNullOrEmpty(prefsUrl))
+            {
+                if (prefsUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
+                {
+                    Debug.LogError("[MiniMvp] kog_api_base cleartext refused in release — use HTTPS staging");
+                }
+                else
+                {
+                    return prefsUrl.TrimEnd('/');
+                }
+            }
             var url = string.IsNullOrWhiteSpace(releaseBaseUrl) ? baseUrl : releaseBaseUrl;
             url = (url ?? string.Empty).Trim();
             if (url.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
             {
-                Debug.LogError("[MiniMvp] Release build refuses cleartext HTTP — set releaseBaseUrl to HTTPS");
+                Debug.LogError("[MiniMvp] Release build refuses cleartext HTTP — set releaseBaseUrl or kog_api_base to HTTPS");
                 url = "https://api.kingdomsofglory.com";
             }
             return url.TrimEnd('/');
@@ -306,6 +320,7 @@ namespace KoG.MiniMvp.App
                 }));
             };
             _hud.OnChatSend = () => StartCoroutine(ChatSendAndRefresh());
+            _hud.OnChatClanSend = () => StartCoroutine(ChatClanSendAndRefresh());
             _hud.OnChatRefresh = () => StartCoroutine(_social.RefreshChatHistory(summary =>
             {
                 if (_hud != null) _hud.SetChatHistory(summary);
@@ -353,7 +368,7 @@ namespace KoG.MiniMvp.App
                 SyncDeviceSettingsToSave();
                 var result = _save.ManualSave();
                 SetStatus(result.Success
-                    ? "Saqlandi (r" + _save.Revision + ")"
+                    ? "Qurilma saqlandi (r" + _save.Revision + ") · iqtisod serverda"
                     : "Saqlash xato: " + result.Message);
             };
             _hud.OnOpenAchievements = () =>
@@ -1111,6 +1126,21 @@ namespace KoG.MiniMvp.App
             });
         }
 
+        IEnumerator ChatClanSendAndRefresh()
+        {
+            var draft = _hud != null ? _hud.ChatDraft : "";
+            yield return _social.SendClanChat(draft);
+            if (_hud != null && !string.IsNullOrEmpty(draft)) _hud.ChatDraft = "";
+            yield return _social.RefreshClanChatHistory(summary =>
+            {
+                if (_hud != null)
+                {
+                    _hud.SetChatHistory(summary);
+                    _hud.ShowChatSheet(true);
+                }
+            });
+        }
+
         IEnumerator WaitTrainingThenReload(int seconds)
         {
             var wait = Mathf.Clamp(seconds, 1, 120);
@@ -1491,7 +1521,7 @@ namespace KoG.MiniMvp.App
             );
 
             var ok = false;
-            yield return _api.PostJson("/api/v1/campaign/start", body, SessionStore.Token, null, (code, text) =>
+            yield return _api.PostJson("/api/v1/campaign/start", body, SessionStore.Token, ApiClient.NewIdempotencyKey(), (code, text) =>
             {
                 SetBusy(false);
                 if (code < 200 || code >= 300)

@@ -100,6 +100,7 @@ namespace KoG.MiniMvp.UI
         public Action OnClanRefresh;
         public Action OnOpenChat;
         public Action OnChatSend;
+        public Action OnChatClanSend;
         public Action OnChatRefresh;
         public Action OnOpenPvp;
         public Action OnPvpFight;
@@ -1023,12 +1024,14 @@ namespace KoG.MiniMvp.UI
             var draftRt = _chatDraftField.GetComponent<RectTransform>();
             draftRt.sizeDelta = new Vector2(520f, 40f);
 
-            const float bw = 180f;
-            const float gap = 12f;
+            const float bw = 150f;
+            const float gap = 10f;
             const float btnH = 52f;
-            var x = -300f;
-            MakeBtn(sheet, "ChatSend", "Yuborish", ref x, -50f, bw, gap, btnH,
+            var x = -330f;
+            MakeBtn(sheet, "ChatSend", "Global", ref x, -50f, bw, gap, btnH,
                 new Color(0.16f, 0.40f, 0.46f), () => Safe(OnChatSend));
+            MakeBtn(sheet, "ChatClan", "Klan", ref x, -50f, bw, gap, btnH,
+                new Color(0.34f, 0.28f, 0.52f), () => Safe(OnChatClanSend));
             MakeBtn(sheet, "ChatRefresh", "Yangila", ref x, -50f, bw, gap, btnH,
                 new Color(0.18f, 0.42f, 0.36f), () => Safe(OnChatRefresh));
             MakeBtn(sheet, "ChatClose", "Yopish", ref x, -50f, bw, gap, btnH,

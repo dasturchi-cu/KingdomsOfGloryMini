@@ -288,6 +288,96 @@ namespace KoG.MiniMvp.App
             }
         }
 
+        public IEnumerator SendClanChat(string draft = null)
+        {
+            if (_api == null || !SessionStore.HasSession)
+            {
+                _setStatus?.Invoke("Avval Guest/Login qiling");
+                yield break;
+            }
+
+            if (string.IsNullOrEmpty(_clanId))
+            {
+                _setStatus?.Invoke("Klan chat: avval klanga qo‘shiling");
+                yield break;
+            }
+
+            _setBusy?.Invoke(true);
+            _setStatus?.Invoke("Klan chat…");
+            var trimmed = (draft ?? "").Trim();
+            if (trimmed.Length > 120) trimmed = trimmed.Substring(0, 120);
+            var msg = string.IsNullOrEmpty(trimmed)
+                ? "Klan salom! " + DateTime.UtcNow.ToString("HH:mm:ss")
+                : trimmed;
+            var body = Json(
+                ("channelType", "clan"),
+                ("clanId", _clanId),
+                ("body", msg),
+                ("senderId", SessionStore.PlayerId)
+            );
+            var sendOk = false;
+            yield return _api.PostJson("/api/v1/chat/send", body, SessionStore.Token, null, (code, text) =>
+            {
+                if (code < 200 || code >= 300)
+                {
+                    _setBusy?.Invoke(false);
+                    _setStatus?.Invoke("Klan chat xato: " + _extractError(text));
+                    return;
+                }
+
+                sendOk = true;
+            });
+
+            if (!sendOk) yield break;
+            _setBusy?.Invoke(false);
+            _setStatus?.Invoke("Klan chat: " + msg);
+        }
+
+        public IEnumerator RefreshClanChatHistory(Action<string> onSummary = null)
+        {
+            if (_api == null || !SessionStore.HasSession)
+            {
+                _setStatus?.Invoke("Avval Guest/Login qiling");
+                yield break;
+            }
+
+            if (string.IsNullOrEmpty(_clanId))
+            {
+                var empty = "Klan chat: klan yo‘q";
+                onSummary?.Invoke(empty);
+                _setStatus?.Invoke(empty);
+                yield break;
+            }
+
+            _setBusy?.Invoke(true);
+            string histText = null;
+            long histCode = 0;
+            yield return _api.GetJson(
+                "/api/v1/chat/history?channelType=clan&clanId=" + _clanId + "&limit=20",
+                SessionStore.Token,
+                (code, text) =>
+                {
+                    histCode = code;
+                    histText = text;
+                });
+
+            _setBusy?.Invoke(false);
+            if (histCode < 200 || histCode >= 300)
+            {
+                var err = "Klan chat: " + _extractError(histText);
+                onSummary?.Invoke(err);
+                _setStatus?.Invoke(err);
+                yield break;
+            }
+
+            var lines = ExtractChatBodies(histText, 12);
+            var summary = lines.Count > 0
+                ? "Klan · " + string.Join("\n", lines)
+                : "Klan chat bo‘sh";
+            onSummary?.Invoke(summary);
+            _setStatus?.Invoke("Klan chat · " + lines.Count + " xabar");
+        }
+
         public IEnumerator RefreshChatHistory(Action<string> onSummary = null)
         {
             if (_api == null || !SessionStore.HasSession)

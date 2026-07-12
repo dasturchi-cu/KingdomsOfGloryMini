@@ -1,10 +1,11 @@
+using KoG.MiniMvp.InputUtil;
 using UnityEngine;
 
 namespace KoG.MiniMvp.Troops
 {
     /// <summary>
     /// Touch/mouse: tap troop to select, tap ground to move, tap enemy to attack.
-    /// Ignores UI. Disabled while building placement is active (host gates).
+    /// Input System only — UI hits use finger-aware pointer id.
     /// </summary>
     public sealed class TroopInputDriver : MonoBehaviour
     {
@@ -26,13 +27,11 @@ namespace KoG.MiniMvp.Troops
             if (_cam == null) _cam = UnityEngine.Camera.main;
             if (_cam == null) return;
 
-            if (!Input.GetMouseButtonDown(0)) return;
+            if (!PointerInputUtil.WasPressedThisFrame()) return;
+            if (PointerInputUtil.IsPointerOverUi()) return;
+            if (!PointerInputUtil.TryGetScreenPosition(out var screenPos)) return;
 
-            if (UnityEngine.EventSystems.EventSystem.current != null &&
-                UnityEngine.EventSystems.EventSystem.current.IsPointerOverGameObject())
-                return;
-
-            var ray = _cam.ScreenPointToRay(Input.mousePosition);
+            var ray = _cam.ScreenPointToRay(screenPos);
             if (Physics.Raycast(ray, out var hit, 500f))
             {
                 var actor = hit.collider.GetComponentInParent<TroopActor>();
