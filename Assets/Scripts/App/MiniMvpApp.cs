@@ -175,6 +175,9 @@ namespace KoG.MiniMvp.App
         void Awake()
         {
             _api = new ApiClient(ResolveBaseUrl());
+            var funnel = GetComponent<FunnelAnalytics>();
+            if (funnel == null) funnel = gameObject.AddComponent<FunnelAnalytics>();
+            funnel.Bind(_api);
             // Scene-ga qo'lda tashlangan AI prefab Play'da yotib qoladi / dublikat.
             // Faqat Resources orqali spawn qilingan castle_1 ishlatiladi.
             DestroyLooseSceneCastles();
@@ -476,6 +479,7 @@ namespace KoG.MiniMvp.App
             if (_troopInput != null) _troopInput.SetEnabled(!_buildings.IsPlacing);
             if (!_buildings.IsPlacing)
             {
+                FunnelAnalytics.Instance?.Track("place_building");
                 yield return LoadPlayerState();
                 // Bounce the most recently selected / newest building.
                 if (!string.IsNullOrEmpty(_selectedBuildingId) &&
@@ -804,6 +808,8 @@ namespace KoG.MiniMvp.App
                 SetScreen(UiScreen.Game);
                 SetStatus("Ro‘yxat OK. Faqat qal’a — Keyingi: Kon → Tasdiq. ◆ Mana = askar.");
                 _loginStreakClaimedThisSession = false;
+                FunnelAnalytics.Instance?.Track("player_registered");
+                FunnelAnalytics.Instance?.Track("session_start");
                 StartCoroutine(LoadPlayerState());
             });
         }
@@ -835,8 +841,25 @@ namespace KoG.MiniMvp.App
                 SetScreen(UiScreen.Game);
                 SetStatus("Kirish OK.");
                 _loginStreakClaimedThisSession = false;
+                FunnelAnalytics.Instance?.Track("session_start");
+                MaybeTrackD1Return();
                 StartCoroutine(LoadPlayerState());
             });
+        }
+
+        void MaybeTrackD1Return()
+        {
+            var key = "kog_first_session_day";
+            var today = DateTime.UtcNow.ToString("yyyy-MM-dd");
+            if (!PlayerPrefs.HasKey(key))
+            {
+                PlayerPrefs.SetString(key, today);
+                PlayerPrefs.Save();
+                return;
+            }
+            var first = PlayerPrefs.GetString(key, today);
+            if (first != today)
+                FunnelAnalytics.Instance?.Track("d1_return", ("firstDay", first));
         }
 
         IEnumerator LoadPlayerState()
@@ -1382,6 +1405,8 @@ namespace KoG.MiniMvp.App
 
             if (!ok || res == null) yield break;
 
+            FunnelAnalytics.Instance?.Track("train_troop", ("troopType", _trainTroopType));
+
             if (res.totalCostMana > 0) _mana = Math.Max(0, _mana - res.totalCostMana);
             if (res.housing != null && res.housing.max > 0)
             {
@@ -1544,6 +1569,8 @@ namespace KoG.MiniMvp.App
 
             if (!ok) yield break;
 
+            FunnelAnalytics.Instance?.Track("raid_start", ("fortressId", _raidFortressId.ToString()));
+
             var from = FindBuildingWorldPos("barracks");
             if (from.sqrMagnitude < 0.01f) from = FieldCenter;
             var camp = FieldCenter + new Vector3(4.5f, 0f, 4.5f);
@@ -1667,6 +1694,8 @@ namespace KoG.MiniMvp.App
                 });
 
             if (!ok || res == null) yield break;
+
+            FunnelAnalytics.Instance?.Track("raid_complete", ("fortressId", _raidFortressId.ToString()));
 
             _gold = res.goldBalance;
             var stars = res.battleResult != null ? res.battleResult.stars : res.starsEarned;
