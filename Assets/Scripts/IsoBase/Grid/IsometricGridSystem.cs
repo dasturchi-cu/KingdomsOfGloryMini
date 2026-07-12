@@ -243,11 +243,8 @@ namespace KoG.IsoBase.Grid
                 return;
             }
 
-            // Edit mode da ham ko'rinsin
-            if (_cells == null || _cells.GetLength(0) != width || _cells.GetLength(1) != height)
-            {
-                // Gizmo uchun vaqtinchalik — Awake bo'lmasa ham chizamiz
-            }
+            // Ensure cells are initialized so occupancy colors draw correctly in Edit mode
+            EnsureInitialized();
 
             Gizmos.color = gizmoLineColor;
 
@@ -263,11 +260,7 @@ namespace KoG.IsoBase.Grid
                         Gizmos.DrawSphere(c, Mathf.Min(tileWidth, tileHeight) * 0.04f);
                     }
 
-                    if (_cells != null
-                        && x < _cells.GetLength(0)
-                        && y < _cells.GetLength(1)
-                        && _cells[x, y] != null
-                        && _cells[x, y].Occupied)
+                    if (_cells[x, y] != null && _cells[x, y].Occupied)
                     {
                         Gizmos.color = gizmoOccupiedColor;
                         DrawCellDiamond(x, y, filled: true);

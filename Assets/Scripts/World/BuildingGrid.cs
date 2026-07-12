@@ -90,20 +90,16 @@ namespace KoG.MiniMvp.World
 
             Gizmos.color = gizmoColor;
             var half = cellSize * 0.5f;
-            for (var z = 0; z < gridSize; z++)
+            var minVal = -half;
+            var maxVal = (gridSize - 1) * cellSize + half;
+
+            for (var i = 0; i <= gridSize; i++)
             {
-                for (var x = 0; x < gridSize; x++)
-                {
-                    var c = GridToWorld(x, z);
-                    var p0 = new Vector3(c.x - half, 0.02f, c.z - half);
-                    var p1 = new Vector3(c.x + half, 0.02f, c.z - half);
-                    var p2 = new Vector3(c.x + half, 0.02f, c.z + half);
-                    var p3 = new Vector3(c.x - half, 0.02f, c.z + half);
-                    Gizmos.DrawLine(p0, p1);
-                    Gizmos.DrawLine(p1, p2);
-                    Gizmos.DrawLine(p2, p3);
-                    Gizmos.DrawLine(p3, p0);
-                }
+                var coord = minVal + i * cellSize;
+                // Lines parallel to Z axis (fixed X)
+                Gizmos.DrawLine(new Vector3(coord, 0.02f, minVal), new Vector3(coord, 0.02f, maxVal));
+                // Lines parallel to X axis (fixed Z)
+                Gizmos.DrawLine(new Vector3(minVal, 0.02f, coord), new Vector3(maxVal, 0.02f, coord));
             }
         }
     }

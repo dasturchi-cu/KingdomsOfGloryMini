@@ -48,6 +48,8 @@ namespace KoG.MiniMvp.Camera
         Vector3 _velocity;
         int _activeFinger = -1;
         float _lastPinchDist = -1f;
+        float _startingPinchDist = -1f;
+        float _startingOrthoTarget = -1f;
 
         float _punchOrtho;
         float _punchTime;
@@ -230,12 +232,24 @@ namespace KoG.MiniMvp.Camera
                     var a = t0.position.ReadValue();
                     var b = t1.position.ReadValue();
                     var dist = Vector2.Distance(a, b);
-                    if (_lastPinchDist > 0f)
-                        NudgeOrthoTarget((dist - _lastPinchDist) * PinchZoomSpeed);
-                    _lastPinchDist = dist;
+                    if (dist > 0.01f)
+                    {
+                        if (_startingPinchDist <= 0f)
+                        {
+                            _startingPinchDist = dist;
+                            _startingOrthoTarget = _orthoTarget;
+                        }
+                        else
+                        {
+                            float ratio = _startingPinchDist / dist;
+                            SetOrthoTarget(_startingOrthoTarget * ratio, hard: false);
+                        }
+                        _lastPinchDist = dist;
+                    }
                     return;
                 }
 
+                _startingPinchDist = -1f;
                 _lastPinchDist = -1f;
             }
 
@@ -350,10 +364,17 @@ namespace KoG.MiniMvp.Camera
                 return;
             }
 
-            if (_focus.x < minX) _focus.x = Mathf.Lerp(_focus.x, minX, SoftClampStrength * Time.deltaTime);
-            else if (_focus.x > maxX) _focus.x = Mathf.Lerp(_focus.x, maxX, SoftClampStrength * Time.deltaTime);
-            if (_focus.z < minZ) _focus.z = Mathf.Lerp(_focus.z, minZ, SoftClampStrength * Time.deltaTime);
-            else if (_focus.z > maxZ) _focus.z = Mathf.Lerp(_focus.z, maxZ, SoftClampStrength * Time.deltaTime);
+            // Do not elastic-fight the user's finger while actively dragging.
+            // Drag moves the camera smoothly into the rubber-band zone up to hardLim.
+            if (!_dragging)
+            {
+                // Frame-rate independent elastic bounce back
+                float lerpT = 1f - Mathf.Exp(-SoftClampStrength * Time.deltaTime);
+                if (_focus.x < minX) _focus.x = Mathf.Lerp(_focus.x, minX, lerpT);
+                else if (_focus.x > maxX) _focus.x = Mathf.Lerp(_focus.x, maxX, lerpT);
+                if (_focus.z < minZ) _focus.z = Mathf.Lerp(_focus.z, minZ, lerpT);
+                else if (_focus.z > maxZ) _focus.z = Mathf.Lerp(_focus.z, maxZ, lerpT);
+            }
             _focus.y = 0f;
 
             var hardLim = lim + EdgeRubber;
@@ -400,6 +421,11 @@ namespace KoG.MiniMvp.Camera
                 return;
             }
 
+            if (count < 2)
+            {
+                _startingPinchDist = -1f;
+            }
+
             if (count < 2 && _lastPinchDist > 0f)
             {
                 // Pinch ended. Re-anchor the remaining finger to prevent camera jumps
@@ -419,13 +445,22 @@ namespace KoG.MiniMvp.Camera
                 var a = t0.position.ReadValue();
                 var b = t1.position.ReadValue();
                 var dist = Vector2.Distance(a, b);
-                if (_lastPinchDist > 0f)
+                if (dist > 0.01f)
                 {
-                    NudgeOrthoTarget((dist - _lastPinchDist) * PinchZoomSpeed);
+                    if (_startingPinchDist <= 0f)
+                    {
+                        _startingPinchDist = dist;
+                        _startingOrthoTarget = _orthoTarget;
+                    }
+                    else
+                    {
+                        float ratio = _startingPinchDist / dist;
+                        SetOrthoTarget(_startingOrthoTarget * ratio, hard: false);
+                    }
                     _velocity = Vector3.zero;
                     _smoothing = false;
+                    _lastPinchDist = dist;
                 }
-                _lastPinchDist = dist;
                 _dragging = false;
                 _panArmed = false;
                 return;
@@ -475,6 +510,7 @@ namespace KoG.MiniMvp.Camera
             _panArmed = false;
             _activeFinger = -1;
             _lastPinchDist = -1f;
+            _startingPinchDist = -1f;
         }
 
         void HandleMouseEditor()

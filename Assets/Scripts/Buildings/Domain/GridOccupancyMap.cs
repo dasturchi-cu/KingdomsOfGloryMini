@@ -79,15 +79,19 @@ namespace KoG.MiniMvp.Buildings
         public bool CanPlace(GridCoord anchor, BuildingFootprint footprint, string ignoreBuildingId = null)
         {
             footprint.CollectCells(anchor, _scratch);
+            List<long> owned = null;
+            if (!string.IsNullOrEmpty(ignoreBuildingId))
+            {
+                _byBuildingId.TryGetValue(ignoreBuildingId, out owned);
+            }
+
             for (var i = 0; i < _scratch.Count; i++)
             {
                 var cell = _scratch[i];
                 if (!IsInside(cell)) return false;
                 var key = Pack(cell);
                 if (!_occupied.Contains(key)) continue;
-                if (!string.IsNullOrEmpty(ignoreBuildingId) &&
-                    _byBuildingId.TryGetValue(ignoreBuildingId, out var owned) &&
-                    owned.Contains(key))
+                if (owned != null && owned.Contains(key))
                     continue;
                 return false;
             }
