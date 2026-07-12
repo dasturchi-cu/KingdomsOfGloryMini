@@ -8,10 +8,14 @@ namespace KoG.MiniMvp.Buildings
     /// Touch/mouse placement + relocate driver.
     /// Placement: finger follows in real time with grid snap (BuildingSystem + PlacePreviewFx).
     /// Relocate: press building → drag → release to confirm. Zero alloc on hot path.
+    /// Empty ground tap clears selection via <see cref="OnEmptyTap"/>.
     /// </summary>
     public sealed class PlacementInputDriver : MonoBehaviour
     {
         const float DragThresholdPx = 8f;
+        /// <summary>Lift aim point above fingertip so ghost is visible (CoC-style).</summary>
+        const float FingerOffsetPx = 72f;
+        const float TapMaxPx = 14f;
         const int RayBufferSize = 24;
 
         static readonly RaycastHit[] RayHits = new RaycastHit[RayBufferSize];
@@ -23,6 +27,11 @@ namespace KoG.MiniMvp.Buildings
         bool _relocateArmed;
         string _pressBuildingId;
         Vector2 _pressScreen;
+        bool _pressWasEmpty;
+        bool _panLikely;
+
+        /// <summary>Fired on short empty-ground tap (not a pan / not on a building).</summary>
+        public System.Action OnEmptyTap;
 
         /// <summary>Camera must not pan while placing, relocating, or press-held on a building.</summary>
         public bool BlocksCameraPan =>
@@ -63,6 +72,7 @@ namespace KoG.MiniMvp.Buildings
             }
 
             TickBeginRelocate();
+            TickEmptyTapDeselect();
         }
 
         void TickPlacementDrag()
@@ -79,7 +89,7 @@ namespace KoG.MiniMvp.Buildings
             if (!_placingDrag && !PointerInputUtil.IsPressed()) return;
             if (!PointerInputUtil.TryGetScreenPosition(out var screenPos)) return;
             if (PointerInputUtil.IsPointerOverUi() && !_placingDrag) return;
-            if (!TryRayGround(screenPos, out var world)) return;
+            if (!TryRayGround(AimScreen(screenPos), out var world)) return;
             _system.MovePreviewToWorld(world);
         }
 
@@ -89,11 +99,15 @@ namespace KoG.MiniMvp.Buildings
             {
                 _pressBuildingId = null;
                 _relocateArmed = false;
+                _pressWasEmpty = false;
+                _panLikely = false;
                 if (!PointerInputUtil.TryGetScreenPosition(out _pressScreen)) return;
                 if (PointerInputUtil.IsPointerOverUi()) return;
 
                 if (TryResolveRelocateTarget(_pressScreen, out var buildingId))
                     _pressBuildingId = buildingId;
+                else if (!TryRayBuilding(_pressScreen, out _))
+                    _pressWasEmpty = true;
             }
 
             if (string.IsNullOrEmpty(_pressBuildingId)) return;
@@ -107,7 +121,7 @@ namespace KoG.MiniMvp.Buildings
                     {
                         _relocateArmed = true;
                         BuildingClickRelay.SuppressClickFrames = Time.frameCount + 3;
-                        if (TryRayGround(screenPos, out var world))
+                        if (TryRayGround(AimScreen(screenPos), out var world))
                             _system.MoveRelocateToWorld(world);
                     }
                     else
@@ -124,11 +138,31 @@ namespace KoG.MiniMvp.Buildings
             }
         }
 
+        void TickEmptyTapDeselect()
+        {
+            if (!_pressWasEmpty) return;
+            if (!PointerInputUtil.TryGetScreenPosition(out var screenPos)) return;
+
+            if (PointerInputUtil.IsPressed() &&
+                (screenPos - _pressScreen).sqrMagnitude >= DragThresholdPx * DragThresholdPx)
+                _panLikely = true;
+
+            if (!PointerInputUtil.WasReleasedThisFrame()) return;
+
+            var wasEmpty = _pressWasEmpty && !_panLikely;
+            var shortTap = (screenPos - _pressScreen).sqrMagnitude <= TapMaxPx * TapMaxPx;
+            _pressWasEmpty = false;
+            _panLikely = false;
+            if (!wasEmpty || !shortTap) return;
+            if (PointerInputUtil.IsPointerOverUi()) return;
+            OnEmptyTap?.Invoke();
+        }
+
         void TickRelocateDrag()
         {
             if (PointerInputUtil.TryGetScreenPosition(out var screenPos) &&
                 PointerInputUtil.IsPressed() &&
-                TryRayGround(screenPos, out var world))
+                TryRayGround(AimScreen(screenPos), out var world))
             {
                 _system.MoveRelocateToWorld(world);
             }
@@ -142,20 +176,25 @@ namespace KoG.MiniMvp.Buildings
             }
         }
 
+        static Vector2 AimScreen(Vector2 finger)
+        {
+            // Offset toward screen top so the footprint sits above the fingertip.
+            return new Vector2(finger.x, finger.y + FingerOffsetPx);
+        }
+
         bool TryResolveRelocateTarget(Vector2 screenPos, out string buildingId)
         {
             buildingId = null;
             if (TryRayBuilding(screenPos, out var marker))
             {
-                if (marker.buildingType == "castle") return false;
                 buildingId = marker.buildingId;
                 return !string.IsNullOrEmpty(buildingId);
             }
 
+            // Fallback: already-selected building (white ring) + press near it.
             var selectedId = _selectedBuildingId != null ? _selectedBuildingId() : null;
             if (string.IsNullOrEmpty(selectedId)) return false;
             if (!_system.TryGet(selectedId, out var inst)) return false;
-            if (inst.Type == "castle") return false;
 
             var world = _system.AnchorToWorld(inst.Anchor);
             var screen = _cam.WorldToScreenPoint(world);

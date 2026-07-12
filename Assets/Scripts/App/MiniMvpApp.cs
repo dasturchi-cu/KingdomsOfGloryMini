@@ -435,6 +435,12 @@ namespace KoG.MiniMvp.App
                 _buildings.Configure(_api, () => SessionStore.Token, () => SessionStore.PlayerId, _buildingGrid);
                 _buildings.StatusChanged += msg => SetStatus(msg);
                 _buildings.StateChanged += OnBuildingStateChanged;
+                _buildings.PreviewCellChanged += valid =>
+                {
+                    MiniAudio.PlaySnap();
+                    if (_hud != null && _buildings.IsPlacing)
+                        _hud.SetPlacementValid(valid);
+                };
                 _buildings.MutationSucceeded += () =>
                 {
                     if (_hud != null) _hud.SetPlacementMode(false);
@@ -451,8 +457,20 @@ namespace KoG.MiniMvp.App
 
             var cam = UnityEngine.Camera.main;
             _placementInput.Bind(_buildings, cam, () => _selectedBuildingId);
+            _placementInput.OnEmptyTap = ClearBuildingSelection;
 
             WireCameraPanBlock();
+        }
+
+        void ClearBuildingSelection()
+        {
+            if (string.IsNullOrEmpty(_selectedBuildingId)) return;
+            if (_buildings != null && (_buildings.IsPlacing || _buildings.IsRelocating)) return;
+            _selectedBuildingId = null;
+            _pendingDestroyId = null;
+            BuildingSelectFx.Clear();
+            RefreshHud();
+            SetStatus("Tanlov bekor");
         }
 
         void WireCameraPanBlock()
@@ -1900,6 +1918,7 @@ namespace KoG.MiniMvp.App
                 _pendingDestroyId = null;
                 _selectedBuildingId = id;
                 BuildingSelectFx.Select(go);
+                MiniAudio.PlaySelect();
                 _buildings?.BindConstructionTimer(id);
                 if (_cocCamera != null)
                     _cocCamera.FocusSmooth(ResolveBuildingWorldPos(type, gridX, gridZ));

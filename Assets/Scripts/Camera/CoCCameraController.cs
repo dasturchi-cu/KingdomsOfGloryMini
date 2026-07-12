@@ -19,17 +19,18 @@ namespace KoG.MiniMvp.Camera
         public const float CamDistance = 44f;
 
         const float DragThresholdPx = 8f;
-        const float MomentumDamping = 5.5f;
-        const float PanSpeed = 0.024f;
-        const float PinchZoomSpeed = 0.0045f;
+        const float MomentumDamping = 6.2f;
+        const float PanSpeed = 0.026f;
+        const float PinchZoomSpeed = 0.0052f;
         const float ScrollZoomSpeed = 1.35f;
+        const float ZoomSmooth = 14f;
         const float MinOrtho = 7f;
         const float MaxOrtho = 16f;
         const float DefaultOrtho = 10.5f;
         const float UiBottomGuardPx = 160f;
         const float SoftClampStrength = 8f;
         const float EdgeRubber = 2.8f;
-        const float FocusLerp = 7.5f;
+        const float FocusLerp = 8.5f;
 
         UnityEngine.Camera _cam;
         Vector3 _fieldCenter;
@@ -53,6 +54,7 @@ namespace KoG.MiniMvp.Camera
         float _punchAmount;
         Vector3 _punchOffset;
         float _orthoSize = DefaultOrtho;
+        float _orthoTarget = DefaultOrtho;
 
         /// <summary>When true (placing / relocating building), skip pan — zoom still ok.</summary>
         public System.Func<bool> BlocksPan;
@@ -63,12 +65,21 @@ namespace KoG.MiniMvp.Camera
         public float OrthoSize
         {
             get => _orthoSize;
-            set
-            {
-                _orthoSize = Mathf.Clamp(value, MinOrtho, MaxOrtho);
-                if (_cam != null && _punchDuration <= 0f)
-                    _cam.orthographicSize = _orthoSize;
-            }
+            set => SetOrthoTarget(value, hard: !_configured);
+        }
+
+        void SetOrthoTarget(float value, bool hard = false)
+        {
+            _orthoTarget = Mathf.Clamp(value, MinOrtho, MaxOrtho);
+            if (!hard) return;
+            _orthoSize = _orthoTarget;
+            if (_cam != null && _punchDuration <= 0f)
+                _cam.orthographicSize = _orthoSize;
+        }
+
+        void NudgeOrthoTarget(float delta)
+        {
+            SetOrthoTarget(_orthoTarget - delta, hard: false);
         }
 
         /// <summary>World position for an elevated CoC look-at <paramref name="focus"/>.</summary>
@@ -129,7 +140,8 @@ namespace KoG.MiniMvp.Camera
             _smoothTarget = _focus;
             _smoothing = false;
             _velocity = Vector3.zero;
-            OrthoSize = orthoSize;
+            _orthoTarget = Mathf.Clamp(orthoSize, MinOrtho, MaxOrtho);
+            _orthoSize = _orthoTarget;
             SoftClampFocus(hard: true);
             _configured = true;
             EnsureCameraPose(movePosition: true);
@@ -174,9 +186,24 @@ namespace KoG.MiniMvp.Camera
             }
 
             ApplySmoothFocus();
+            ApplySmoothZoom();
             SoftClampFocus(hard: false);
             TickPunch();
             ApplyTransform();
+        }
+
+        void ApplySmoothZoom()
+        {
+            if (Mathf.Abs(_orthoSize - _orthoTarget) < 0.0005f)
+            {
+                _orthoSize = _orthoTarget;
+                return;
+            }
+
+            _orthoSize = Mathf.Lerp(
+                _orthoSize,
+                _orthoTarget,
+                1f - Mathf.Exp(-ZoomSmooth * Time.unscaledDeltaTime));
         }
 
         void HandleZoomOnly()
@@ -203,7 +230,7 @@ namespace KoG.MiniMvp.Camera
                     var b = t1.position.ReadValue();
                     var dist = Vector2.Distance(a, b);
                     if (_lastPinchDist > 0f)
-                        OrthoSize -= (dist - _lastPinchDist) * PinchZoomSpeed;
+                        NudgeOrthoTarget((dist - _lastPinchDist) * PinchZoomSpeed);
                     _lastPinchDist = dist;
                     return;
                 }
@@ -216,7 +243,7 @@ namespace KoG.MiniMvp.Camera
             {
                 var scroll = mouse.scroll.ReadValue().y;
                 if (Mathf.Abs(scroll) > 0.01f)
-                    OrthoSize -= scroll * 0.01f * ScrollZoomSpeed;
+                    NudgeOrthoTarget(scroll * 0.01f * ScrollZoomSpeed);
             }
         }
 
@@ -283,9 +310,15 @@ namespace KoG.MiniMvp.Camera
             _cam.allowHDR = false;
             _cam.transform.rotation = PoseRotation();
             if (_cam.orthographicSize < MinOrtho || _cam.orthographicSize > MaxOrtho)
+            {
                 OrthoSize = DefaultOrtho;
+                _orthoSize = DefaultOrtho;
+            }
             else
+            {
                 _orthoSize = Mathf.Clamp(_cam.orthographicSize, MinOrtho, MaxOrtho);
+                _orthoTarget = _orthoSize;
+            }
             if (movePosition)
                 ApplyTransform();
         }
@@ -373,7 +406,7 @@ namespace KoG.MiniMvp.Camera
                 var dist = Vector2.Distance(a, b);
                 if (_lastPinchDist > 0f)
                 {
-                    OrthoSize -= (dist - _lastPinchDist) * PinchZoomSpeed;
+                    NudgeOrthoTarget((dist - _lastPinchDist) * PinchZoomSpeed);
                     _velocity = Vector3.zero;
                     _smoothing = false;
                 }
@@ -445,7 +478,7 @@ namespace KoG.MiniMvp.Camera
             var scroll = mouse.scroll.ReadValue().y;
             if (Mathf.Abs(scroll) > 2f)
             {
-                OrthoSize -= Mathf.Sign(scroll) * Mathf.Clamp(Mathf.Abs(scroll) * 0.01f, 0.1f, 3f) * ScrollZoomSpeed;
+                NudgeOrthoTarget(Mathf.Sign(scroll) * Mathf.Clamp(Mathf.Abs(scroll) * 0.01f, 0.1f, 3f) * ScrollZoomSpeed);
                 _velocity = Vector3.zero;
                 _smoothing = false;
             }

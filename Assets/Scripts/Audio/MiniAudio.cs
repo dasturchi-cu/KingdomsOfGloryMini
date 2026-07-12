@@ -13,6 +13,8 @@ namespace KoG.MiniMvp.Audio
         AudioSource _sfx;
         AudioSource _bgm;
         AudioClip _tap;
+        AudioClip _select;
+        AudioClip _snap;
         AudioClip _place;
         AudioClip _trainDone;
         AudioClip _collect;
@@ -21,6 +23,7 @@ namespace KoG.MiniMvp.Audio
         AudioClip _raidLose;
         AudioClip _bgmLoop;
         bool _muted;
+        float _snapGate;
 
         public static bool Muted
         {
@@ -42,6 +45,8 @@ namespace KoG.MiniMvp.Audio
         public static void ToggleMute() => Muted = !Muted;
 
         public static void PlayTap() => Play(Cue.Tap);
+        public static void PlaySelect() => Play(Cue.Select);
+        public static void PlaySnap() => Play(Cue.Snap);
         public static void PlayPlace() => Play(Cue.Place);
         public static void PlayTrainDone() => Play(Cue.TrainDone);
         public static void PlayCollect() => Play(Cue.Collect);
@@ -52,6 +57,8 @@ namespace KoG.MiniMvp.Audio
         enum Cue
         {
             Tap,
+            Select,
+            Snap,
             Place,
             TrainDone,
             Collect,
@@ -85,6 +92,8 @@ namespace KoG.MiniMvp.Audio
             _bgm.volume = 0.08f;
 
             _tap = MakeBeep("sfx_tap", 880f, 0.045f, 0.22f);
+            _select = MakeBeep("sfx_select", 660f, 0.055f, 0.26f, slideToHz: 920f);
+            _snap = MakeBeep("sfx_snap", 1240f, 0.028f, 0.14f);
             _place = MakeBeep("sfx_place", 520f, 0.09f, 0.35f, slideToHz: 720f);
             _trainDone = MakeChord("sfx_train", 0.16f, 0.4f, 440f, 554f, 659f);
             _collect = MakeBeep("sfx_collect", 740f, 0.08f, 0.32f, slideToHz: 980f);
@@ -121,9 +130,19 @@ namespace KoG.MiniMvp.Audio
         {
             Ensure();
             if (_instance._muted || _instance._sfx == null) return;
+
+            if (cue == Cue.Snap)
+            {
+                // Gate snap ticks so rapid cell hops stay crisp, not noisy.
+                if (Time.unscaledTime < _instance._snapGate) return;
+                _instance._snapGate = Time.unscaledTime + 0.045f;
+            }
+
             var clip = cue switch
             {
                 Cue.Tap => _instance._tap,
+                Cue.Select => _instance._select,
+                Cue.Snap => _instance._snap,
                 Cue.Place => _instance._place,
                 Cue.TrainDone => _instance._trainDone,
                 Cue.Collect => _instance._collect,
@@ -133,7 +152,8 @@ namespace KoG.MiniMvp.Audio
                 _ => null
             };
             if (clip == null) return;
-            _instance._sfx.PlayOneShot(clip, 1f);
+            var vol = cue == Cue.Snap ? 0.55f : 1f;
+            _instance._sfx.PlayOneShot(clip, vol);
         }
 
         static AudioClip MakeBeep(string name, float hz, float seconds, float amp, float slideToHz = -1f)

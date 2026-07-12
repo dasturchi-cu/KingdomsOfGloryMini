@@ -93,7 +93,7 @@ namespace KoG.MiniMvp.World
             var start = building.localScale;
             if (start.sqrMagnitude < 0.0001f) start = Vector3.one;
             var t0 = 0f;
-            const float life = 0.28f;
+            const float life = 0.22f;
             while (t0 < life && building != null)
             {
                 t0 += Time.deltaTime;
@@ -110,7 +110,7 @@ namespace KoG.MiniMvp.World
 
         System.Collections.IEnumerator AnimatePuff(Transform t)
         {
-            var life = 0.45f;
+            var life = 0.38f;
             var t0 = 0f;
             while (t0 < life && t != null)
             {
@@ -124,7 +124,7 @@ namespace KoG.MiniMvp.World
 
         System.Collections.IEnumerator AnimateFloat(Transform t, TextMesh tm)
         {
-            var life = 1.1f;
+            var life = 0.95f;
             var t0 = 0f;
             var start = t.position;
             while (t0 < life && t != null)

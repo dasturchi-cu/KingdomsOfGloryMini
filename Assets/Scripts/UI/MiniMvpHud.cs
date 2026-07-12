@@ -1387,6 +1387,8 @@ namespace KoG.MiniMvp.UI
             colors.disabledColor = new Color(0.2f, 0.2f, 0.22f, 0.7f);
             btn.colors = colors;
             btn.onClick.AddListener(() => onClick?.Invoke());
+            if (go.GetComponent<UiButtonPressFx>() == null)
+                go.AddComponent<UiButtonPressFx>();
             _actionButtons.Add(btn);
 
             var labelGo = new GameObject("Label", typeof(RectTransform), typeof(Text));

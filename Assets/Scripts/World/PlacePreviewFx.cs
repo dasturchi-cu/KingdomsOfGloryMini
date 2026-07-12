@@ -8,8 +8,8 @@ namespace KoG.MiniMvp.World
     /// </summary>
     public sealed class PlacePreviewFx : MonoBehaviour
     {
-        const float FollowSmooth = 18f;
-        const float PulseHz = 2.2f;
+        const float FollowSmooth = 22f;
+        const float PulseHz = 2.4f;
         const float GhostHeight = 1.65f;
 
         static PlacePreviewFx _instance;

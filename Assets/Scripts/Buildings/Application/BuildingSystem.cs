@@ -15,6 +15,8 @@ namespace KoG.MiniMvp.Buildings
     {
         public event Action<string> StatusChanged;
         public event Action StateChanged;
+        /// <summary>Fired when preview/relocate snaps to a new grid cell (SFX / haptic).</summary>
+        public event Action<bool> PreviewCellChanged;
         /// <summary>Fired after a successful server mutation — host should reload player state.</summary>
         public event Action MutationSucceeded;
 
@@ -198,28 +200,26 @@ namespace KoG.MiniMvp.Buildings
             var anchor = new GridCoord(x, z);
             var valid = Validate(anchor, _session.Footprint, _session.BuildingType);
             if (!_session.WouldChangeAnchor(anchor, valid)) return;
+            var cellMoved = !anchor.Equals(_session.Anchor);
             _session.SetAnchor(anchor, valid);
             RefreshPreview();
+            if (cellMoved) PreviewCellChanged?.Invoke(valid);
             StateChanged?.Invoke();
         }
 
-        /// <summary>Start CoC-style drag relocate for an existing mine/barracks (not castle).</summary>
+        /// <summary>Start CoC-style drag relocate for any building (castle, mine, barracks, future types).</summary>
         public bool BeginRelocate(string buildingId)
         {
             if (_busy || _occupancy == null || _grid == null) return false;
             if (_session.IsActive || IsRelocating) return false;
             if (!_instances.TryGetValue(buildingId, out var inst)) return false;
-            if (inst.Type == "castle")
-            {
-                Emit("Qasrni ko‘chirib bo‘lmaydi");
-                return false;
-            }
 
             _relocateBuildingId = buildingId;
             _relocateOrigin = inst.Anchor;
             _relocateFootprint = inst.Footprint;
             _relocateType = inst.Type;
             _occupancy.Free(buildingId);
+            // While castle is mid-relocate, keep-out uses its preview anchor (SetAnchorPreview).
             _relocateValid = Validate(inst.Anchor, _relocateFootprint, _relocateType);
             RefreshRelocatePreview(inst.Anchor);
             Emit("Sudrab joylang — qo‘yib yuboring");
@@ -237,11 +237,18 @@ namespace KoG.MiniMvp.Buildings
             }
 
             var anchor = new GridCoord(x, z);
-            _relocateValid = Validate(anchor, _relocateFootprint, _relocateType);
+            var valid = Validate(anchor, _relocateFootprint, _relocateType);
+            var prevAnchor = default(GridCoord);
+            var hadPrev = _instances.TryGetValue(_relocateBuildingId, out var inst);
+            if (hadPrev) prevAnchor = inst.Anchor;
+            if (hadPrev && prevAnchor.Equals(anchor) && _relocateValid == valid) return;
+
+            var cellMoved = !hadPrev || !prevAnchor.Equals(anchor);
+            _relocateValid = valid;
             RefreshRelocatePreview(anchor);
             // Stash desired anchor on the instance temporarily for visual sync.
-            if (_instances.TryGetValue(_relocateBuildingId, out var inst))
-                inst.SetAnchorPreview(anchor);
+            if (hadPrev) inst.SetAnchorPreview(anchor);
+            if (cellMoved) PreviewCellChanged?.Invoke(valid);
             StateChanged?.Invoke();
         }
 
@@ -276,6 +283,8 @@ namespace KoG.MiniMvp.Buildings
             if (!_relocateValid)
             {
                 Emit("Bu katak band — qaytarildi");
+                KoG.MiniMvp.Audio.MiniAudio.PlayError();
+                PlacePreviewFx.RejectPulse();
                 inst.SetAnchorPreview(_relocateOrigin);
                 _occupancy.Occupy(_relocateBuildingId, _relocateOrigin, _relocateFootprint);
                 StateChanged?.Invoke();
