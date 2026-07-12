@@ -493,24 +493,34 @@ namespace KoG.MiniMvp.App
             }
         }
 
-        /// <summary>While dragging a building, keep the mesh under the finger on the grid.</summary>
-        void SyncRelocateVisual()
+        void UpdateBuildingViewPos(string id)
         {
-            if (_buildings == null || !_buildings.IsRelocating) return;
-            var id = _buildings.RelocatingBuildingId;
-            if (string.IsNullOrEmpty(id)) return;
-            if (!_buildings.TryGet(id, out var inst)) return;
+            if (_buildings == null || !_buildings.TryGet(id, out var inst)) return;
             if (!_buildingViews.TryGetValue(id, out var go) || go == null) return;
 
             var world = ResolveBuildingWorldPos(inst.Type, inst.Anchor.X, inst.Anchor.Z);
-            // Slight lift while dragging so the building reads as “picked up”.
-            world.y += 0.18f;
+            if (_buildings.IsRelocating && _buildings.RelocatingBuildingId == id)
+            {
+                // Slight lift while dragging so the building reads as “picked up”.
+                world.y += 0.18f;
+            }
             go.transform.position = world;
+
             var marker = go.GetComponent<BuildingMarker>();
             if (marker != null)
             {
                 marker.gridX = inst.Anchor.X;
                 marker.gridZ = inst.Anchor.Z;
+            }
+        }
+
+        /// <summary>Sync all building views with their model state (lift drag-relocating building).</summary>
+        void SyncRelocateVisual()
+        {
+            if (_buildingViews == null) return;
+            foreach (var id in _buildingViews.Keys)
+            {
+                UpdateBuildingViewPos(id);
             }
         }
 

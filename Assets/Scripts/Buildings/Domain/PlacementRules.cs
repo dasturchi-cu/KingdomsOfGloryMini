@@ -23,7 +23,30 @@ namespace KoG.MiniMvp.Buildings
             if (map == null) return false;
             if (!map.CanPlace(anchor, footprint)) return false;
 
-            if (buildingType == "castle" || castleKeepOut <= 0 || castleAnchor == null)
+            if (buildingType == "castle")
+            {
+                if (castleKeepOut > 0)
+                {
+                    // Ensure no other buildings sit within the castle's new keep-out Chebyshev box.
+                    // The box is centered at anchor (which is the castle's 1x1 cell).
+                    var minX = anchor.X - castleKeepOut + 1;
+                    var maxX = anchor.X + castleKeepOut - 1;
+                    var minZ = anchor.Z - castleKeepOut + 1;
+                    var maxZ = anchor.Z + castleKeepOut - 1;
+                    for (var z = minZ; z <= maxZ; z++)
+                    {
+                        for (var x = minX; x <= maxX; x++)
+                        {
+                            if (x == anchor.X && z == anchor.Z) continue;
+                            if (map.IsCellOccupied(new GridCoord(x, z)))
+                                return false;
+                        }
+                    }
+                }
+                return true;
+            }
+
+            if (castleKeepOut <= 0 || castleAnchor == null)
                 return true;
 
             var cells = KeepOutScratch;

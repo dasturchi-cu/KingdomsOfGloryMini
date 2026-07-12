@@ -212,11 +212,10 @@ namespace KoG.MiniMvp.Buildings
         public void MovePreviewToWorld(Vector3 world)
         {
             if (!_session.IsActive || _grid == null) return;
-            if (!_grid.WorldToGrid(world, out var x, out var z))
-            {
-                x = Mathf.Clamp(Mathf.RoundToInt(world.x / _grid.CellSize), 0, _grid.GridSize - 1);
-                z = Mathf.Clamp(Mathf.RoundToInt(world.z / _grid.CellSize), 0, _grid.GridSize - 1);
-            }
+
+            // Clamp dynamically so that the entire footprint is guaranteed to stay within the grid boundaries
+            int x = Mathf.Clamp(Mathf.RoundToInt(world.x / _grid.CellSize), 0, _grid.GridSize - _session.Footprint.OccupiedWidth);
+            int z = Mathf.Clamp(Mathf.RoundToInt(world.z / _grid.CellSize), 0, _grid.GridSize - _session.Footprint.OccupiedDepth);
 
             var anchor = new GridCoord(x, z);
             var valid = Validate(anchor, _session.Footprint, _session.BuildingType);
@@ -251,11 +250,10 @@ namespace KoG.MiniMvp.Buildings
         public void MoveRelocateToWorld(Vector3 world)
         {
             if (!IsRelocating || _grid == null) return;
-            if (!_grid.WorldToGrid(world, out var x, out var z))
-            {
-                x = Mathf.Clamp(Mathf.RoundToInt(world.x / _grid.CellSize), 0, _grid.GridSize - 1);
-                z = Mathf.Clamp(Mathf.RoundToInt(world.z / _grid.CellSize), 0, _grid.GridSize - 1);
-            }
+
+            // Clamp dynamically so that the entire footprint is guaranteed to stay within the grid boundaries
+            int x = Mathf.Clamp(Mathf.RoundToInt(world.x / _grid.CellSize), 0, _grid.GridSize - _relocateFootprint.OccupiedWidth);
+            int z = Mathf.Clamp(Mathf.RoundToInt(world.z / _grid.CellSize), 0, _grid.GridSize - _relocateFootprint.OccupiedDepth);
 
             var anchor = new GridCoord(x, z);
             var valid = Validate(anchor, _relocateFootprint, _relocateType);
@@ -391,8 +389,8 @@ namespace KoG.MiniMvp.Buildings
             PlacePreviewFx.ShowFootprint(
                 world,
                 _grid.CellSize,
-                _relocateFootprint.OccupiedWidth,
-                _relocateFootprint.OccupiedDepth,
+                _relocateFootprint.Width,
+                _relocateFootprint.Depth,
                 _relocateFootprint.YawDegrees,
                 _relocateValid,
                 _relocateType);
@@ -410,8 +408,8 @@ namespace KoG.MiniMvp.Buildings
             PlacePreviewFx.ShowFootprint(
                 world,
                 _grid.CellSize,
-                _session.Footprint.OccupiedWidth,
-                _session.Footprint.OccupiedDepth,
+                _session.Footprint.Width,
+                _session.Footprint.Depth,
                 _session.Footprint.YawDegrees,
                 _session.IsValid,
                 _session.BuildingType);
@@ -698,6 +696,10 @@ namespace KoG.MiniMvp.Buildings
         bool Validate(GridCoord anchor, BuildingFootprint footprint, string buildingType)
         {
             FindCastle(out var castle, out var keepOut);
+            if (buildingType == "castle" && keepOut <= 0)
+            {
+                keepOut = BuildingDefinitionCatalog.GetOrDefault("castle").KeepOutChebyshev;
+            }
             return PlacementRules.CanPlace(_occupancy, buildingType, anchor, footprint, castle, keepOut);
         }
 
