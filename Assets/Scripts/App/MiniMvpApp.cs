@@ -87,11 +87,6 @@ namespace KoG.MiniMvp.App
         TroopInputDriver _troopInput;
         SaveSystem _save;
 
-        GUIStyle _titleStyle;
-        GUIStyle _statusStyle;
-        GUIStyle _btnStyle;
-        bool _stylesReady;
-
         /// <summary>World center of the playable checkerboard (castle sits here).</summary>
         Vector3 FieldCenter => new Vector3((gridSize - 1) * cellSize * 0.5f, 0f, (gridSize - 1) * cellSize * 0.5f);
 
@@ -848,30 +843,6 @@ namespace KoG.MiniMvp.App
         }
 
 
-        void EnsureStyles()
-        {
-            if (_stylesReady) return;
-            _titleStyle = new GUIStyle(GUI.skin.label)
-            {
-                fontSize = 22,
-                fontStyle = FontStyle.Bold,
-                normal = { textColor = Color.white }
-            };
-            _statusStyle = new GUIStyle(GUI.skin.label)
-            {
-                fontSize = 16,
-                wordWrap = true,
-                normal = { textColor = new Color(1f, 0.95f, 0.6f) }
-            };
-            _btnStyle = new GUIStyle(GUI.skin.button) { fontSize = 16 };
-            _stylesReady = true;
-        }
-
-        void OnGUI()
-        {
-            // Auth + Game + Result all use MiniMvpHud (uGUI). OnGUI kept empty for hot-reload safety.
-        }
-
         IEnumerator GuestLogin()
         {
             var id = Guid.NewGuid().ToString("N").Substring(0, 8);
@@ -1004,7 +975,7 @@ namespace KoG.MiniMvp.App
                     _unlockLabels = state.unlocks.labels ?? System.Array.Empty<string>();
                     _campaignMax = Math.Max(1, state.unlocks.campaignMax);
                     if (!CanTrainTroop(_trainTroopType))
-                        _trainTroopType = CanTrainTroop("barbarian") ? "barbarian" : "barbarian";
+                        _trainTroopType = "barbarian";
                 }
                 else
                 {

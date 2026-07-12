@@ -882,7 +882,7 @@ namespace KoG.MiniMvp.UI
 
             Label(sheet, "SocialTitle", "Ijtimoiy", 24, TextAnchor.UpperLeft,
                 new Vector2(28f, -20f), new Vector2(400f, 32f), new Color(1f, 0.9f, 0.55f));
-            Label(sheet, "SocialHint", "Klan · Chat · PvP · Turnir · Reklama (+500g/500m/5💎) · Saqlash",
+            Label(sheet, "SocialHint", "Klan · Chat · PvP · Turnir · Reklama (+500● +500◆ +5◇) · Saqlash",
                 15, TextAnchor.UpperLeft, new Vector2(28f, -56f), new Vector2(660f, 28f),
                 new Color(0.78f, 0.82f, 0.88f));
 
@@ -900,7 +900,7 @@ namespace KoG.MiniMvp.UI
             x = -320f;
             MakeBtn(sheet, "Cup", "Turnir", ref x, 10f, bw, gap, btnH,
                 new Color(0.52f, 0.40f, 0.12f), () => { ShowSocialSheet(false); Safe(OnOpenTournament); });
-            MakeBtn(sheet, "Ad", "Reklama 📺", ref x, 10f, bw, gap, btnH,
+            MakeBtn(sheet, "Ad", "Reklama +", ref x, 10f, bw, gap, btnH,
                 new Color(0.46f, 0.32f, 0.12f), () => { ShowSocialSheet(false); Safe(OnRewardedAd); });
             MakeBtn(sheet, "Save", "Saqlash", ref x, 10f, bw, gap, btnH,
                 new Color(0.18f, 0.42f, 0.36f), () => { ShowSocialSheet(false); Safe(OnManualSave); });
