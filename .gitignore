@@ -108,3 +108,6 @@ InitTestScene*.unity*
 
 _tmp_assets/
 
+
+# Third-party pack excluded from Unity import (KoG ExcludeThirdPartyPacks)
+/Assets/PolygonApocalypse~/

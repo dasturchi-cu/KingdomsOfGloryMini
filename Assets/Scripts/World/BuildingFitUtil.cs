@@ -28,10 +28,12 @@ namespace KoG.MiniMvp.World
 
             var upright = EncapsulateBounds(renderers);
             var footprint0 = Mathf.Max(upright.size.x, upright.size.z, 0.01f);
-            var alreadyUpright = upright.size.y >= footprint0 * 0.85f;
+            // Soft-GO / upright packs already stand — do NOT tip them with import-fix rotations.
+            var alreadyUpright = upright.size.y >= footprint0 * 0.55f;
 
-            if (forceUpright || !alreadyUpright)
+            if (!alreadyUpright)
             {
+                // Tripo / FBX lying on XZ — pick rotation that maximizes height vs footprint.
                 var candidates = new[]
                 {
                     Quaternion.identity,
@@ -58,7 +60,11 @@ namespace KoG.MiniMvp.World
                 }
 
                 go.transform.SetPositionAndRotation(Vector3.zero, bestRot);
-                Debug.Log("[MiniMvp] Castle rot=" + bestRot.eulerAngles + " hScore=" + bestScore.ToString("F2") + " wasUpright=" + alreadyUpright);
+                Debug.Log("[MiniMvp] Import upright rot=" + bestRot.eulerAngles + " hScore=" + bestScore.ToString("F2"));
+            }
+            else
+            {
+                go.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
             }
 
             var bounds = EncapsulateBounds(renderers);
@@ -74,20 +80,21 @@ namespace KoG.MiniMvp.World
                 bounds = EncapsulateBounds(renderers);
             }
 
-            if (forceUpright && bounds.size.y < Mathf.Max(bounds.size.x, bounds.size.z) * 0.75f)
+            // Only for still-flat FBX imports — never for Soft-GO (alreadyUpright).
+            if (forceUpright && !alreadyUpright
+                && bounds.size.y < Mathf.Max(bounds.size.x, bounds.size.z) * 0.75f)
             {
-                var e = go.transform.eulerAngles;
-                go.transform.rotation = Quaternion.Euler(e.x - 90f, e.y, e.z);
+                go.transform.rotation = Quaternion.Euler(-90f, go.transform.eulerAngles.y, 0f);
                 bounds = EncapsulateBounds(renderers);
-                Debug.LogWarning("[MiniMvp] Castle still flat — forced extra -90 X");
+                Debug.LogWarning("[MiniMvp] Import still flat — forced -90 X");
             }
 
             var delta = cellWorld - new Vector3(bounds.center.x, bounds.min.y, bounds.center.z);
             go.transform.position += delta;
-            Debug.Log("[MiniMvp] Castle fit h=" + bounds.size.y.ToString("F2") + " fp=" + Mathf.Max(bounds.size.x, bounds.size.z).ToString("F2") + " scale=" + go.transform.localScale.x.ToString("F2"));
+            Debug.Log("[MiniMvp] Fit h=" + bounds.size.y.ToString("F2") + " fp=" + Mathf.Max(bounds.size.x, bounds.size.z).ToString("F2") + " scale=" + go.transform.localScale.x.ToString("F2") + " upright=" + alreadyUpright);
         }
 
-        /// <summary>CoC-style: face camera with slight 3/4 yaw, then re-plant on ground.</summary>
+        /// <summary>CoC-style: yaw only (pitch/roll stay 0 so Soft-GO never tips).</summary>
         public static void OrientTowardCamera(GameObject go, Vector3 cellWorld, float yawBiasDegrees = 25f)
         {
             var cam = UnityEngine.Camera.main;
@@ -96,8 +103,7 @@ namespace KoG.MiniMvp.World
             if (toCam.sqrMagnitude < 0.0001f) return;
 
             var yaw = Quaternion.LookRotation(toCam.normalized).eulerAngles.y + yawBiasDegrees;
-            var e = go.transform.eulerAngles;
-            go.transform.rotation = Quaternion.Euler(e.x, yaw, e.z);
+            go.transform.rotation = Quaternion.Euler(0f, yaw, 0f);
 
             var renderers = go.GetComponentsInChildren<Renderer>(true);
             if (renderers == null || renderers.Length == 0) return;
@@ -161,9 +167,24 @@ namespace KoG.MiniMvp.World
 
         public static Bounds EncapsulateBounds(Renderer[] renderers)
         {
-            var bounds = renderers[0].bounds;
-            for (var i = 1; i < renderers.Length; i++) bounds.Encapsulate(renderers[i].bounds);
-            return bounds;
+            Bounds? bounds = null;
+            for (var i = 0; i < renderers.Length; i++)
+            {
+                var r = renderers[i];
+                if (r == null) continue;
+                // Shadow discs + TextMesh badges skew upright scoring (tip Soft-GO over).
+                var n = r.gameObject.name;
+                if (n == "Shadow" || n == "LvlText" || n == "LvlPlate") continue;
+                if (bounds == null) bounds = r.bounds;
+                else
+                {
+                    var b = bounds.Value;
+                    b.Encapsulate(r.bounds);
+                    bounds = b;
+                }
+            }
+            if (bounds != null) return bounds.Value;
+            return renderers.Length > 0 ? renderers[0].bounds : new Bounds(Vector3.zero, Vector3.one);
         }
     }
 }

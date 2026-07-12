@@ -35,7 +35,8 @@ namespace KoG.MiniMvp.World
         }
 
         /// <summary>
-        /// Remap foreign shaders onto the project lit shader (Standard on Built-in).
+        /// Remap foreign / missing shaders onto Built-in Standard.
+        /// Null material slots (broken Soft-GO prefab bake) → colored Standard — no pink.
         /// Name kept for call-site compatibility.
         /// </summary>
         public static void RemapToUrp(GameObject go)
@@ -54,25 +55,29 @@ namespace KoG.MiniMvp.World
                     var src = shared[i];
                     if (src == null)
                     {
-                        next[i] = null;
+                        next[i] = MakeSolid(lit, GuessColor(r.name), "null_" + r.name);
+                        changed = true;
                         continue;
                     }
 
                     var name = src.shader != null ? src.shader.name : "";
-                    var isProjectLit = name == "Standard" || name.Contains("Universal Render Pipeline");
-                    if (isProjectLit && name == "Standard")
+                    // Missing / error shader → solid Standard (pink fix).
+                    if (string.IsNullOrEmpty(name)
+                        || name.Contains("InternalError")
+                        || name.Contains("Hidden/InternalError"))
                     {
-                        next[i] = src;
+                        next[i] = MakeSolid(lit, GuessColor(r.name), "err_" + r.name);
+                        changed = true;
                         continue;
                     }
 
-                    // Remap URP / unknown → Standard for Built-in pipeline.
                     if (name == "Standard")
                     {
                         next[i] = src;
                         continue;
                     }
 
+                    // Remap URP / unknown → Standard for Built-in pipeline.
                     var key = src.GetInstanceID();
                     if (!Cache.TryGetValue(key, out var mapped))
                     {
@@ -97,6 +102,40 @@ namespace KoG.MiniMvp.World
             }
 
             ForceMobileStylized(go);
+        }
+
+        static Material MakeSolid(Shader lit, Color color, string cacheKey)
+        {
+            var key = cacheKey.GetHashCode();
+            if (Cache.TryGetValue(key, out var existing) && existing != null)
+                return existing;
+            var m = new Material(lit) { name = cacheKey };
+            if (m.HasProperty("_BaseColor")) m.SetColor("_BaseColor", color);
+            if (m.HasProperty("_Color")) m.SetColor("_Color", color);
+            ApplyMobileSurface(m);
+            Cache[key] = m;
+            return m;
+        }
+
+        /// <summary>Soft-GO part name → palette (matches BuildingVisualFactory).</summary>
+        public static Color GuessColor(string partName)
+        {
+            if (string.IsNullOrEmpty(partName)) return new Color(0.62f, 0.60f, 0.56f);
+            var n = partName.ToLowerInvariant();
+            if (n.Contains("shadow")) return new Color(0.12f, 0.14f, 0.10f, 0.55f);
+            if (n.Contains("roof") || n.Contains("ridge") || n.Contains("peak")) return new Color(0.12f, 0.42f, 0.78f);
+            if (n.Contains("banner") || n.Contains("flag")) return new Color(0.82f, 0.12f, 0.12f);
+            if (n.Contains("ore") || n.Contains("gold") || n.Contains("finial")) return new Color(0.95f, 0.78f, 0.18f);
+            if (n.Contains("wood") || n.Contains("door") || n.Contains("beam") || n.Contains("cross")
+                || n.Contains("crate") || n.Contains("pole") || n.Contains("trim"))
+                return new Color(0.42f, 0.28f, 0.14f);
+            if (n.Contains("window")) return new Color(0.35f, 0.55f, 0.75f);
+            if (n.Contains("yard") || n.Contains("grass")) return new Color(0.35f, 0.55f, 0.28f);
+            if (n.Contains("keep") || n.Contains("walls") || n.Contains("cream")) return new Color(0.92f, 0.88f, 0.78f);
+            if (n.Contains("merlon") || n.Contains("boulder") || n.Contains("gate") || n.Contains("dark"))
+                return new Color(0.42f, 0.40f, 0.38f);
+            if (n.Contains("lvl")) return new Color(0.15f, 0.16f, 0.2f);
+            return new Color(0.62f, 0.60f, 0.56f);
         }
 
         /// <summary>Low gloss + GPU instancing — mutates via cache (no per-renderer .materials clones).</summary>
