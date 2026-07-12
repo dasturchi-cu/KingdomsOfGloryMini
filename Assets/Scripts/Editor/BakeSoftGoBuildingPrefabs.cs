@@ -28,6 +28,7 @@ namespace KoG.MiniMvp.EditorTools
 
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
+            EnsureBuildingArtConfig.Ensure();
             Debug.Log("[KoG] Soft-GO prefabs baked under " + Dir);
         }
 

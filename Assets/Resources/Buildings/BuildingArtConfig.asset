@@ -1,0 +1,30 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5778c3cf6ddb2ed4391081500cbfab73, type: 3}
+  m_Name: BuildingArtConfig
+  m_EditorClassIdentifier: Assembly-CSharp::KoG.MiniMvp.World.BuildingArtConfig
+  entries:
+  - typeId: castle
+    prefab: {fileID: 1836445202457043209, guid: 149c7173c7f5aa14cbac9ed753319dba, type: 3}
+    fallbackPrefab: {fileID: 0}
+    footprint: 2.2
+    preferProcedural: 0
+  - typeId: gold_mine
+    prefab: {fileID: 5740197020206349550, guid: 2fef6df288b5a5e488b5bead5b6f0f04, type: 3}
+    fallbackPrefab: {fileID: 0}
+    footprint: 1.35
+    preferProcedural: 0
+  - typeId: barracks
+    prefab: {fileID: 1031500661853201780, guid: 14f266d32691d7d449cbf415b29dfe86, type: 3}
+    fallbackPrefab: {fileID: 0}
+    footprint: 1.9
+    preferProcedural: 0

@@ -1899,7 +1899,7 @@ namespace KoG.MiniMvp.App
             click.onClick = () =>
             {
                 if (_buildings != null && (_buildings.IsPlacing || _buildings.IsRelocating)) return;
-                if (Time.frameCount <= BuildingClickRelay.SuppressClickFrames) return;
+                if (Time.unscaledTime < BuildingClickRelay.SuppressUntilTime) return;
                 _pendingDestroyId = null;
                 _selectedBuildingId = id;
                 BuildingSelectFx.Select(go);
@@ -2036,20 +2036,14 @@ namespace KoG.MiniMvp.App
 
     public sealed class BuildingClickRelay : MonoBehaviour, UnityEngine.EventSystems.IPointerClickHandler
     {
-        /// <summary>Ignore clicks through this Unity frame (set after drag-release).</summary>
-        public static int SuppressClickFrames;
+        /// <summary>Ignore clicks through this time (set after drag-release).</summary>
+        public static float SuppressUntilTime;
 
         public System.Action onClick;
 
         public void OnPointerClick(UnityEngine.EventSystems.PointerEventData eventData)
         {
-            if (Time.frameCount <= SuppressClickFrames) return;
-            onClick?.Invoke();
-        }
-
-        void OnMouseDown()
-        {
-            if (Time.frameCount <= SuppressClickFrames) return;
+            if (Time.unscaledTime < SuppressUntilTime) return;
             onClick?.Invoke();
         }
     }

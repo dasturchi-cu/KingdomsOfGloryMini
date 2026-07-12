@@ -29,16 +29,26 @@ namespace KoG.MiniMvp.Buildings
         Vector2 _pressScreen;
         bool _pressWasEmpty;
         bool _panLikely;
+        float _pressTime;
+        bool _longPressTriggered;
 
         /// <summary>Fired on short empty-ground tap (not a pan / not on a building).</summary>
         public System.Action OnEmptyTap;
 
-        /// <summary>Camera must not pan while placing, relocating, or press-held on a building.</summary>
-        public bool BlocksCameraPan =>
-            _placingDrag ||
-            _relocateArmed ||
-            !string.IsNullOrEmpty(_pressBuildingId) ||
-            (_system != null && _system.BlocksCameraPan);
+        /// <summary>Camera must not pan while placing, relocating, or press-held on the selected building.</summary>
+        public bool BlocksCameraPan
+        {
+            get
+            {
+                var selectedId = _selectedBuildingId != null ? _selectedBuildingId() : null;
+                bool pressingSelected = !string.IsNullOrEmpty(_pressBuildingId) && _pressBuildingId == selectedId;
+
+                return _placingDrag ||
+                       _relocateArmed ||
+                       pressingSelected ||
+                       (_system != null && _system.BlocksCameraPan);
+            }
+        }
 
         public void Bind(BuildingSystem system, UnityEngine.Camera cam, System.Func<string> selectedBuildingId = null)
         {
@@ -93,6 +103,30 @@ namespace KoG.MiniMvp.Buildings
             _system.MovePreviewToWorld(world);
         }
 
+        void TriggerBuildingSelection(string buildingId)
+        {
+            if (TryRayBuilding(_pressScreen, out var marker) && marker.buildingId == buildingId)
+            {
+                var relay = marker.GetComponentInParent<BuildingClickRelay>();
+                if (relay != null)
+                {
+                    relay.onClick?.Invoke();
+                }
+            }
+        }
+
+        float GetFingerOffsetPx()
+        {
+            // Scale offset dynamically based on screen resolution so it feels consistent physically
+            return FingerOffsetPx * (Screen.height / 1080f);
+        }
+
+        Vector2 AimScreen(Vector2 finger)
+        {
+            // Offset toward screen top so the footprint sits above the fingertip.
+            return new Vector2(finger.x, finger.y + GetFingerOffsetPx());
+        }
+
         void TickBeginRelocate()
         {
             if (PointerInputUtil.WasPressedThisFrame())
@@ -101,6 +135,8 @@ namespace KoG.MiniMvp.Buildings
                 _relocateArmed = false;
                 _pressWasEmpty = false;
                 _panLikely = false;
+                _pressTime = Time.unscaledTime;
+                _longPressTriggered = false;
                 if (!PointerInputUtil.TryGetScreenPosition(out _pressScreen)) return;
                 if (PointerInputUtil.IsPointerOverUi()) return;
 
@@ -113,19 +149,56 @@ namespace KoG.MiniMvp.Buildings
             if (string.IsNullOrEmpty(_pressBuildingId)) return;
             if (!PointerInputUtil.TryGetScreenPosition(out var screenPos)) return;
 
+            var selectedId = _selectedBuildingId != null ? _selectedBuildingId() : null;
+
+            // Long press trigger for non-selected buildings
+            if (_pressBuildingId != selectedId && !_longPressTriggered && !_relocateArmed)
+            {
+                if (PointerInputUtil.IsPressed())
+                {
+                    if (Time.unscaledTime - _pressTime >= 0.45f)
+                    {
+                        // Check if finger stayed within drag threshold
+                        if ((screenPos - _pressScreen).sqrMagnitude < DragThresholdPx * DragThresholdPx)
+                        {
+                            _longPressTriggered = true;
+                            TriggerBuildingSelection(_pressBuildingId);
+                            
+                            // Start relocation immediately
+                            if (_system.BeginRelocate(_pressBuildingId))
+                            {
+                                _relocateArmed = true;
+                                BuildingClickRelay.SuppressUntilTime = Time.unscaledTime + 0.12f;
+                                if (TryRayGround(AimScreen(screenPos), out var world))
+                                    _system.MoveRelocateToWorld(world);
+                            }
+                        }
+                    }
+                }
+            }
+
             if (!_relocateArmed && PointerInputUtil.IsPressed())
             {
                 if ((screenPos - _pressScreen).sqrMagnitude >= DragThresholdPx * DragThresholdPx)
                 {
-                    if (_system.BeginRelocate(_pressBuildingId))
+                    if (_pressBuildingId == selectedId)
                     {
-                        _relocateArmed = true;
-                        BuildingClickRelay.SuppressClickFrames = Time.frameCount + 3;
-                        if (TryRayGround(AimScreen(screenPos), out var world))
-                            _system.MoveRelocateToWorld(world);
+                        // Selected building can be dragged immediately
+                        if (_system.BeginRelocate(_pressBuildingId))
+                        {
+                            _relocateArmed = true;
+                            BuildingClickRelay.SuppressUntilTime = Time.unscaledTime + 0.12f;
+                            if (TryRayGround(AimScreen(screenPos), out var world))
+                                _system.MoveRelocateToWorld(world);
+                        }
+                        else
+                        {
+                            _pressBuildingId = null;
+                        }
                     }
                     else
                     {
+                        // Dragging on non-selected building is ignored (lets camera pan)
                         _pressBuildingId = null;
                     }
                 }
@@ -136,7 +209,7 @@ namespace KoG.MiniMvp.Buildings
                 // Same-frame arm+release: confirm immediately so IsRelocating cannot soft-lock pan.
                 if (_system.IsRelocating)
                 {
-                    BuildingClickRelay.SuppressClickFrames = Time.frameCount + 3;
+                    BuildingClickRelay.SuppressUntilTime = Time.unscaledTime + 0.12f;
                     StartCoroutine(_system.ConfirmRelocate());
                 }
                 _pressBuildingId = null;
@@ -175,17 +248,11 @@ namespace KoG.MiniMvp.Buildings
 
             if (PointerInputUtil.WasReleasedThisFrame())
             {
-                BuildingClickRelay.SuppressClickFrames = Time.frameCount + 3;
+                BuildingClickRelay.SuppressUntilTime = Time.unscaledTime + 0.12f;
                 StartCoroutine(_system.ConfirmRelocate());
                 _pressBuildingId = null;
                 _relocateArmed = false;
             }
-        }
-
-        static Vector2 AimScreen(Vector2 finger)
-        {
-            // Offset toward screen top so the footprint sits above the fingertip.
-            return new Vector2(finger.x, finger.y + FingerOffsetPx);
         }
 
         bool TryResolveRelocateTarget(Vector2 screenPos, out string buildingId)

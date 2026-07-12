@@ -33,6 +33,7 @@ namespace KoG.MiniMvp.Camera
         const float FocusLerp = 8.5f;
 
         UnityEngine.Camera _cam;
+        Canvas _cachedCanvas;
         Vector3 _fieldCenter;
         Vector3 _focus;
         Vector3 _smoothTarget;
@@ -399,6 +400,20 @@ namespace KoG.MiniMvp.Camera
                 return;
             }
 
+            if (count < 2 && _lastPinchDist > 0f)
+            {
+                // Pinch ended. Re-anchor the remaining finger to prevent camera jumps
+                _lastPinchDist = -1f;
+                if (t0 != null)
+                {
+                    _activeFinger = t0.touchId.ReadValue();
+                    _lastPointer = t0.position.ReadValue();
+                    _dragging = true;
+                    _panArmed = false;
+                    _velocity = Vector3.zero;
+                }
+            }
+
             if (count >= 2 && t0 != null && t1 != null)
             {
                 var a = t0.position.ReadValue();
@@ -421,7 +436,9 @@ namespace KoG.MiniMvp.Camera
 
             var pos = t0.position.ReadValue();
             var fingerId = t0.touchId.ReadValue();
-            if (IsOverUi(pos)) return;
+            
+            // Only check IsOverUi if we are not already actively dragging the camera
+            if (!_dragging && IsOverUi(pos)) return;
 
             if (t0.press.wasPressedThisFrame)
             {
@@ -476,7 +493,7 @@ namespace KoG.MiniMvp.Camera
 
             // Input System scroll is often large pixel deltas; ignore tiny noise that would auto-zoom.
             var scroll = mouse.scroll.ReadValue().y;
-            if (Mathf.Abs(scroll) > 2f)
+            if (Mathf.Abs(scroll) > 0.01f)
             {
                 NudgeOrthoTarget(Mathf.Sign(scroll) * Mathf.Clamp(Mathf.Abs(scroll) * 0.01f, 0.1f, 3f) * ScrollZoomSpeed);
                 _velocity = Vector3.zero;
@@ -489,7 +506,8 @@ namespace KoG.MiniMvp.Camera
             bool panBtn = mouse.middleButton.isPressed || (mouse.leftButton.isPressed && alt);
             Vector2 mousePos = mouse.position.ReadValue();
 
-            if (IsOverUi(mousePos) && !mouse.middleButton.isPressed) return;
+            // Only check IsOverUi if we are not already dragging
+            if (!_dragging && IsOverUi(mousePos) && !mouse.middleButton.isPressed) return;
 
             if (mouse.leftButton.wasPressedThisFrame || mouse.middleButton.wasPressedThisFrame)
             {
@@ -520,13 +538,22 @@ namespace KoG.MiniMvp.Camera
         void PanByScreenDelta(Vector2 screenDelta)
         {
             var rot = PoseRotation();
-            var right = rot * Vector3.right;
+            var right = rot * Vector3.right; // Already horizontal
             var forward = Vector3.ProjectOnPlane(rot * Vector3.up, Vector3.up).normalized;
             if (forward.sqrMagnitude < 0.0001f)
                 forward = Vector3.ProjectOnPlane(rot * Vector3.forward, Vector3.up).normalized;
 
-            var zoomFactor = OrthoSize / 10f;
-            var move = (-right * screenDelta.x - forward * screenDelta.y) * PanSpeed * zoomFactor;
+            // Exact orthographic size to pixel conversion for "glued to finger" drag feel
+            float halfHeight = OrthoSize;
+            float worldUnitsPerPixel = (2f * halfHeight) / Mathf.Max(Screen.height, 1);
+            
+            // Vertical movement projected onto the ground plane (divided by sin of pitch angle)
+            float pitchRad = PitchDeg * Mathf.Deg2Rad;
+            float verticalFactor = 1f / Mathf.Sin(pitchRad);
+            
+            var move = -right * (screenDelta.x * worldUnitsPerPixel) 
+                       - forward * (screenDelta.y * worldUnitsPerPixel * verticalFactor);
+
             _focus += move;
             _velocity = move / Mathf.Max(Time.deltaTime, 0.0001f);
         }
@@ -542,13 +569,24 @@ namespace KoG.MiniMvp.Camera
             }
 
             _focus += _velocity * Time.deltaTime;
-            _velocity = Vector3.Lerp(_velocity, Vector3.zero, MomentumDamping * Time.deltaTime);
+            // Frame-rate independent exponential decay
+            _velocity = Vector3.Lerp(_velocity, Vector3.zero, 1f - Mathf.Exp(-MomentumDamping * Time.deltaTime));
         }
 
-        static bool IsOverUi(Vector2 screenPos)
+        bool IsOverUi(Vector2 screenPos)
         {
             // Bottom HUD strip — never start a pan from here.
-            if (screenPos.y < UiBottomGuardPx) return true;
+            float bottomGuard = UiBottomGuardPx;
+            if (_cachedCanvas == null)
+            {
+                _cachedCanvas = FindFirstObjectByType<Canvas>();
+            }
+            if (_cachedCanvas != null)
+            {
+                bottomGuard = UiBottomGuardPx * _cachedCanvas.scaleFactor;
+            }
+
+            if (screenPos.y < bottomGuard) return true;
             // Canvas UI only (not PhysicsRaycaster buildings).
             return PointerInputUtil.IsPointerOverUi();
         }

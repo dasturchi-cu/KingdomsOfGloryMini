@@ -130,8 +130,7 @@ namespace KoG.MiniMvp.World
             BaseWallsDeco.Build(decorations.transform, fieldCenter, fieldWorldSize);
             BuildHorizonFill(terrain.transform, fieldCenter, fieldWorldSize);
 
-            BuildingGrid.Build(gameplay.transform, gridSize, cellSize, fieldCenter);
-            // Camera/Sun parenting happens after MiniMvpApp creates them — see FinalizeHierarchy.
+            // BuildingGrid owned by MiniMvpApp.EnsureBuildingSystem (single instance).
 
             Debug.Log("[MiniMvp] Reference village built — field=" + fieldWorldSize +
                       " grid=" + gridSize + "x" + gridSize + " cell=" + cellSize +
