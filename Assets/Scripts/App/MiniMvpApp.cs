@@ -1116,7 +1116,9 @@ namespace KoG.MiniMvp.App
             }
 
             _raidFortressId = PickRaidFortress();
-            _raidDeployCount = Mathf.Clamp(_barbarianCount, 1, 10);
+            // Soft-test: Camp 2/3 need more than 10 barbs for ≥1★ (see pveSimulator layouts).
+            const int MaxRaidDeploy = 40;
+            _raidDeployCount = Mathf.Clamp(_barbarianCount, 1, MaxRaidDeploy);
 
             SetBusy(true);
             SetStatus("Reyd Lager " + _raidFortressId + "…");
@@ -1231,7 +1233,7 @@ namespace KoG.MiniMvp.App
             sb.Append("]}");
 
             SetBusy(true);
-            SetStatus("Completing raid...");
+            SetStatus("Reyd yakunlanmoqda…");
             CampaignCompleteResponse res = null;
             var ok = false;
             yield return _api.PostJson(
