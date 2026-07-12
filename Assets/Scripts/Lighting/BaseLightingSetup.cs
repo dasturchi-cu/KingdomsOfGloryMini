@@ -4,7 +4,8 @@ using UnityEngine.Rendering;
 namespace KoG.MiniMvp.Lighting
 {
     /// <summary>
-    /// CoC / Might &amp; Glory day look + mobile quality knobs (soft shadow, MSAA, short shadow distance).
+    /// CoC / Might &amp; Glory day look + mobile quality knobs.
+    /// MSAA off by default — MobileVillageOptimize re-asserts after Apply.
     /// </summary>
     public static class BaseLightingSetup
     {
@@ -15,28 +16,25 @@ namespace KoG.MiniMvp.Lighting
             ApplyMobileQuality();
 
             RenderSettings.ambientMode = AmbientMode.Trilight;
-            // Warm midday fantasy — bright, clean, never muddy (CoC / M&G mobile).
-            RenderSettings.ambientSkyColor = new Color(0.72f, 0.86f, 0.98f);
-            RenderSettings.ambientEquatorColor = new Color(0.96f, 0.94f, 0.70f);
-            RenderSettings.ambientGroundColor = new Color(0.40f, 0.54f, 0.30f);
-            RenderSettings.ambientIntensity = 1.22f;
-            RenderSettings.subtractiveShadowColor = new Color(0.26f, 0.38f, 0.24f);
-            RenderSettings.reflectionIntensity = 0.10f;
+            RenderSettings.ambientSkyColor = new Color(0.70f, 0.84f, 0.96f);
+            RenderSettings.ambientEquatorColor = new Color(0.94f, 0.95f, 0.72f);
+            RenderSettings.ambientGroundColor = new Color(0.38f, 0.52f, 0.28f);
+            RenderSettings.ambientIntensity = 1.18f;
+            RenderSettings.subtractiveShadowColor = new Color(0.28f, 0.40f, 0.26f);
+            RenderSettings.reflectionIntensity = 0.12f;
 
-            // Soft atmospheric depth — still readable on phone LCDs.
             RenderSettings.fog = true;
             RenderSettings.fogMode = FogMode.ExponentialSquared;
-            RenderSettings.fogColor = new Color(0.68f, 0.82f, 0.92f);
-            RenderSettings.fogDensity = 0.0042f;
+            RenderSettings.fogColor = new Color(0.66f, 0.80f, 0.90f);
+            RenderSettings.fogDensity = 0.0045f;
 
             var sun = EnsureSun();
             sun.transform.position = fieldCenter + new Vector3(-9f, 20f, -7f);
-            // Top-left key light (matches reference shadow direction).
-            sun.transform.rotation = Quaternion.Euler(48f, -34f, 0f);
-            sun.color = new Color(1f, 0.98f, 0.86f);
-            sun.intensity = 1.34f;
+            sun.transform.rotation = Quaternion.Euler(46f, -32f, 0f);
+            sun.color = new Color(1f, 0.99f, 0.88f);
+            sun.intensity = 1.28f;
             sun.shadows = LightShadows.Soft;
-            sun.shadowStrength = 0.46f;
+            sun.shadowStrength = 0.38f;
             sun.shadowBias = 0.035f;
             sun.shadowNormalBias = 0.4f;
             sun.shadowNearPlane = 0.2f;
@@ -48,20 +46,20 @@ namespace KoG.MiniMvp.Lighting
                 cam.clearFlags = CameraClearFlags.SolidColor;
                 cam.backgroundColor = new Color(0.60f, 0.80f, 0.93f);
                 cam.allowHDR = false;
-                cam.allowMSAA = true;
+                cam.allowMSAA = false;
                 cam.farClipPlane = 180f;
                 cam.nearClipPlane = 0.3f;
             }
         }
 
-        /// <summary>Mobile-friendly quality: MSAA, soft shadows, short distance, 2 cascades.</summary>
+        /// <summary>Mobile-friendly quality: no MSAA, soft shadows, short distance.</summary>
         public static void ApplyMobileQuality()
         {
-            QualitySettings.antiAliasing = 4;
+            QualitySettings.antiAliasing = 0;
             QualitySettings.shadows = ShadowQuality.All;
             QualitySettings.shadowResolution = ShadowResolution.Medium;
-            QualitySettings.shadowDistance = 48f;
-            QualitySettings.shadowCascades = 2;
+            QualitySettings.shadowDistance = 36f;
+            QualitySettings.shadowCascades = 1;
             QualitySettings.shadowProjection = ShadowProjection.StableFit;
             QualitySettings.anisotropicFiltering = AnisotropicFiltering.Enable;
             QualitySettings.softParticles = false;

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem.UI;
@@ -7,32 +8,51 @@ using UnityEngine.UI;
 namespace KoG.MiniMvp.UI
 {
     /// <summary>
-    /// CoC-style runtime HUD tuned for Unity Simulator / Game view.
+    /// CoC-style runtime HUD — thumb-zone loop bar + social sheet + busy/error overlays.
     /// </summary>
     public sealed class MiniMvpHud : MonoBehaviour
     {
-        public const float BottomBarHeight = 178f;
+        /// <summary>Thumb-zone action bar — loop + build tools; social is a sheet.</summary>
+        public const float BottomBarHeight = 210f;
 
         Text _title;
         Text _status;
         Text _goldChip;
+        Text _manaChip;
+        Text _diamondChip;
         Text _troopChip;
         Text _selectedChip;
+        Text _busyLabel;
+        Text _errorLabel;
         GameObject _authRoot;
         GameObject _gameRoot;
         GameObject _resultRoot;
+        GameObject _busyOverlay;
+        GameObject _errorBanner;
+        GameObject _socialSheet;
         Text _resultBody;
+        Text _resultStars;
+        Text _resultLoot;
+        Text _muteLabel;
         InputField _userField;
         InputField _displayField;
         InputField _emailField;
         InputField _passwordField;
         bool _busy;
+        bool _raidCompleteReady;
+        readonly List<Button> _actionButtons = new List<Button>(24);
 
         public Action OnPlaceMine;
         public Action OnPlaceBarracks;
         public Action OnCollect;
         public Action OnTrain;
         public Action OnUpgrade;
+        public Action OnConfirmPlace;
+        public Action OnCancelPlace;
+        public Action OnRotatePlace;
+        public Action OnDestroyBuilding;
+        public Action OnRepairBuilding;
+        public Action OnCancelUpgrade;
         public Action OnStartRaid;
         public Action OnCompleteRaid;
         public Action OnLogout;
@@ -40,6 +60,19 @@ namespace KoG.MiniMvp.UI
         public Action OnRegister;
         public Action OnLogin;
         public Action OnGuest;
+        public Action OnClan;
+        public Action OnChat;
+        public Action OnPvp;
+        public Action OnTournament;
+        public Action OnRewardedAd;
+        public Action OnManualSave;
+        public Action OnRetryLoad;
+
+        GameObject _placementBar;
+        GameObject _buildActionBar;
+        GameObject _loopActionBar;
+        Button _completeRaidBtn;
+        Text _completeRaidLabel;
 
         public string Username => _userField != null ? _userField.text : "";
         public string DisplayName => _displayField != null ? _displayField.text : "";
@@ -60,25 +93,89 @@ namespace KoG.MiniMvp.UI
             ShowAuth(false);
             ShowGame(false);
             ShowResult(false);
+            SetBusy(false);
+            ClearError();
+            ShowSocialSheet(false);
         }
 
-        public void SetBusy(bool busy) => _busy = busy;
+        public void SetBusy(bool busy)
+        {
+            _busy = busy;
+            if (_busyOverlay != null) _busyOverlay.SetActive(busy);
+            if (_busyLabel != null)
+                _busyLabel.text = busy ? "Kutilmoqda…" : "";
+            for (var i = 0; i < _actionButtons.Count; i++)
+            {
+                var btn = _actionButtons[i];
+                if (btn == null) continue;
+                if (btn == _completeRaidBtn)
+                {
+                    btn.interactable = !busy && _raidCompleteReady;
+                    continue;
+                }
+                btn.interactable = !busy;
+            }
+        }
 
         public void SetStatus(string status)
         {
             if (_status != null) _status.text = status ?? "";
         }
 
+        public void ShowError(string message, bool showRetry)
+        {
+            if (_errorBanner != null) _errorBanner.SetActive(true);
+            if (_errorLabel != null) _errorLabel.text = message ?? "Xato";
+            var retryBtn = _errorBanner != null
+                ? _errorBanner.transform.Find("Retry")?.GetComponent<Button>()
+                : null;
+            if (retryBtn != null) retryBtn.gameObject.SetActive(showRetry);
+        }
+
+        public void ClearError()
+        {
+            if (_errorBanner != null) _errorBanner.SetActive(false);
+            if (_errorLabel != null) _errorLabel.text = "";
+        }
+
         public void SetResources(long gold, int barbarians)
         {
-            if (_goldChip != null) _goldChip.text = "●  " + FormatNum(gold);
-            if (_troopChip != null) _troopChip.text = "⚔  " + barbarians;
+            SetResources(gold, 0, 0, barbarians);
+        }
+
+        public void SetResources(long gold, long mana, long diamond, int barbarians)
+        {
+            if (_goldChip != null) _goldChip.text = "● " + FormatNum(gold);
+            if (_manaChip != null) _manaChip.text = "◆ " + FormatNum(mana);
+            if (_diamondChip != null) _diamondChip.text = "◇ " + FormatNum(diamond);
+            if (_troopChip != null) _troopChip.text = "⚔ " + barbarians;
         }
 
         public void SetSelected(string label)
         {
             if (_selectedChip == null) return;
             _selectedChip.text = string.IsNullOrEmpty(label) ? "Tanlangan: —" : "Tanlangan: " + label;
+        }
+
+        public void SetPlacementMode(bool placing)
+        {
+            if (_placementBar != null) _placementBar.SetActive(placing);
+            if (_buildActionBar != null) _buildActionBar.SetActive(!placing);
+            if (_loopActionBar != null) _loopActionBar.SetActive(!placing);
+        }
+
+        /// <summary>Disable Complete until raid wait elapsed; show remaining seconds on label.</summary>
+        public void SetRaidCompleteReady(bool ready, int secondsLeft)
+        {
+            _raidCompleteReady = ready;
+            if (_completeRaidBtn != null)
+                _completeRaidBtn.interactable = !_busy && ready;
+            if (_completeRaidLabel != null)
+            {
+                _completeRaidLabel.text = ready
+                    ? "Yakunla"
+                    : (secondsLeft > 0 ? "Kut " + secondsLeft + "s" : "Yakunla");
+            }
         }
 
         public void SetAuthFields(string username, string displayName, string email, string password)
@@ -92,21 +189,37 @@ namespace KoG.MiniMvp.UI
         public void ShowAuth(bool visible)
         {
             if (_authRoot != null) _authRoot.SetActive(visible);
+            if (visible) ShowSocialSheet(false);
         }
 
         public void ShowGame(bool visible)
         {
             if (_gameRoot != null) _gameRoot.SetActive(visible);
+            if (!visible) ShowSocialSheet(false);
         }
 
         public void ShowResult(bool visible)
         {
             if (_resultRoot != null) _resultRoot.SetActive(visible);
+            if (visible) ShowSocialSheet(false);
         }
 
         public void SetResultMessage(string message)
         {
             if (_resultBody != null) _resultBody.text = message ?? "";
+        }
+
+        public void SetResultChips(int stars, long lootGold, bool won)
+        {
+            if (_resultStars != null)
+                _resultStars.text = won ? "★  " + Mathf.Max(0, stars) : "★  0";
+            if (_resultLoot != null)
+                _resultLoot.text = lootGold > 0 ? "+ " + lootGold + " ●" : "Loot 0";
+        }
+
+        void ShowSocialSheet(bool visible)
+        {
+            if (_socialSheet != null) _socialSheet.SetActive(visible);
         }
 
         static string FormatNum(long n)
@@ -147,86 +260,300 @@ namespace KoG.MiniMvp.UI
             safeGo.AddComponent<SafeAreaPad>();
             var root = safeGo.transform;
 
-            // Top resource strip (CoC-like).
             var top = Panel(root, "TopBar",
-                new Vector2(0.5f, 1f), new Vector2(0.5f, 1f),
-                new Vector2(0f, -10f), new Vector2(1040f, 132f),
-                new Color(0.04f, 0.05f, 0.08f, 0.72f));
+                new Vector2(0f, 1f), new Vector2(1f, 1f),
+                new Vector2(0f, -10f), new Vector2(-24f, 128f),
+                new Color(0.05f, 0.07f, 0.10f, 0.88f));
+            top.pivot = new Vector2(0.5f, 1f);
+            top.anchoredPosition = new Vector2(0f, -10f);
+            top.sizeDelta = new Vector2(-24f, 128f);
 
-            _title = Label(top.transform, "Title", "Kingdoms of Glory", 26, TextAnchor.UpperLeft,
-                new Vector2(18f, -10f), new Vector2(520f, 34f), new Color(1f, 0.92f, 0.55f));
+            _title = Label(top.transform, "Title", "Kingdoms of Glory", 22, TextAnchor.UpperLeft,
+                new Vector2(16f, -10f), new Vector2(360f, 28f), new Color(1f, 0.90f, 0.48f));
 
-            var goldPanel = Panel(top.transform, "GoldChip",
-                new Vector2(1f, 1f), new Vector2(1f, 1f),
-                new Vector2(-210f, -18f), new Vector2(190f, 44f),
-                new Color(0.35f, 0.22f, 0.05f, 0.92f));
-            goldPanel.anchorMin = new Vector2(1f, 1f);
-            goldPanel.anchorMax = new Vector2(1f, 1f);
-            goldPanel.pivot = new Vector2(1f, 1f);
-            _goldChip = Label(goldPanel, "GoldTxt", "●  0", 22, TextAnchor.MiddleCenter,
-                new Vector2(8f, -6f), new Vector2(174f, 32f), new Color(1f, 0.86f, 0.25f));
-            CenterLabel(_goldChip);
+            var muteX = 390f;
+            MakeBtn(top.transform, "Mute", MuteLabel(), ref muteX, -32f, 52f, 0f, 48f,
+                new Color(0.18f, 0.20f, 0.26f), () =>
+                {
+                    KoG.MiniMvp.Audio.MiniAudio.ToggleMute();
+                    RefreshMuteLabel();
+                });
+            var muteGo = top.transform.Find("Mute");
+            if (muteGo != null) _muteLabel = muteGo.GetComponentInChildren<Text>();
 
-            var troopPanel = Panel(top.transform, "TroopChip",
-                new Vector2(1f, 1f), new Vector2(1f, 1f),
-                new Vector2(-18f, -18f), new Vector2(170f, 44f),
-                new Color(0.12f, 0.18f, 0.32f, 0.92f));
-            troopPanel.anchorMin = new Vector2(1f, 1f);
-            troopPanel.anchorMax = new Vector2(1f, 1f);
-            troopPanel.pivot = new Vector2(1f, 1f);
-            _troopChip = Label(troopPanel, "TroopTxt", "⚔  0", 22, TextAnchor.MiddleCenter,
-                new Vector2(8f, -6f), new Vector2(154f, 32f), new Color(0.75f, 0.88f, 1f));
-            CenterLabel(_troopChip);
+            // Resource chips (right → left): troops, diamond, mana, gold
+            _troopChip = MakeResourceChip(top.transform, "TroopChip", "⚔ 0",
+                new Color(0.10f, 0.20f, 0.34f, 0.95f), new Color(0.78f, 0.90f, 1f), -12f, 110f);
+            _diamondChip = MakeResourceChip(top.transform, "DiamondChip", "◇ 0",
+                new Color(0.22f, 0.16f, 0.34f, 0.95f), new Color(0.85f, 0.78f, 1f), -130f, 100f);
+            _manaChip = MakeResourceChip(top.transform, "ManaChip", "◆ 0",
+                new Color(0.10f, 0.28f, 0.36f, 0.95f), new Color(0.55f, 0.88f, 1f), -238f, 100f);
+            _goldChip = MakeResourceChip(top.transform, "GoldChip", "● 0",
+                new Color(0.38f, 0.26f, 0.06f, 0.95f), new Color(1f, 0.88f, 0.28f), -346f, 110f);
 
-            _status = Label(top.transform, "Status", "Simulator — Guest bilan boshlang", 18, TextAnchor.UpperLeft,
-                new Vector2(18f, -48f), new Vector2(1000f, 36f), new Color(0.95f, 0.93f, 0.78f));
-            _selectedChip = Label(top.transform, "Selected", "Tanlangan: —", 17, TextAnchor.UpperLeft,
-                new Vector2(18f, -86f), new Vector2(700f, 28f), new Color(0.7f, 0.85f, 1f));
+            _status = Label(top.transform, "Status", "Guest bilan boshlang", 16, TextAnchor.UpperLeft,
+                new Vector2(16f, -48f), new Vector2(980f, 30f), new Color(0.96f, 0.94f, 0.82f));
+            _selectedChip = Label(top.transform, "Selected", "Tanlangan: —", 15, TextAnchor.UpperLeft,
+                new Vector2(16f, -82f), new Vector2(700f, 26f), new Color(0.68f, 0.84f, 1f));
 
+            BuildErrorBanner(root);
             BuildAuthPanel(root);
+            BuildGameBar(root);
+            BuildSocialSheet(root);
+            BuildResultPanel(root);
+            BuildBusyOverlay(root);
+        }
 
+        void BuildErrorBanner(Transform root)
+        {
+            var banner = Panel(root, "ErrorBanner",
+                new Vector2(0.5f, 1f), new Vector2(0.5f, 1f),
+                new Vector2(0f, -148f), new Vector2(1000f, 72f),
+                new Color(0.42f, 0.12f, 0.10f, 0.96f));
+            banner.pivot = new Vector2(0.5f, 1f);
+            _errorBanner = banner.gameObject;
+            _errorLabel = Label(banner, "ErrorTxt", "", 16, TextAnchor.MiddleLeft,
+                new Vector2(20f, -12f), new Vector2(720f, 48f), new Color(1f, 0.92f, 0.88f));
+            var rx = 320f;
+            MakeBtn(banner, "Retry", "Qayta urin", ref rx, -36f, 160f, 0f, 48f,
+                new Color(0.55f, 0.22f, 0.16f), () =>
+                {
+                    ClearError();
+                    Safe(OnRetryLoad);
+                });
+            _errorBanner.SetActive(false);
+        }
+
+        void BuildBusyOverlay(Transform root)
+        {
+            var overlay = Panel(root, "BusyOverlay",
+                new Vector2(0f, 0f), new Vector2(1f, 1f),
+                Vector2.zero, Vector2.zero,
+                new Color(0.02f, 0.03f, 0.05f, 0.45f));
+            overlay.offsetMin = Vector2.zero;
+            overlay.offsetMax = Vector2.zero;
+            _busyOverlay = overlay.gameObject;
+            // Block taps while busy.
+            var blocker = _busyOverlay.AddComponent<Button>();
+            blocker.transition = Selectable.Transition.None;
+            blocker.onClick.AddListener(() => { });
+
+            var chip = Panel(overlay, "BusyChip",
+                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
+                Vector2.zero, new Vector2(320f, 72f),
+                new Color(0.08f, 0.10f, 0.14f, 0.96f));
+            _busyLabel = Label(chip, "BusyTxt", "Kutilmoqda…", 20, TextAnchor.MiddleCenter,
+                new Vector2(20f, -18f), new Vector2(280f, 40f), new Color(1f, 0.92f, 0.7f));
+            CenterLabel(_busyLabel);
+            _busyOverlay.SetActive(false);
+        }
+
+        void BuildGameBar(Transform root)
+        {
             _gameRoot = Panel(root, "GameBar",
                 new Vector2(0.5f, 0f), new Vector2(0.5f, 0f),
                 new Vector2(0f, BottomBarHeight * 0.5f), new Vector2(1060f, BottomBarHeight),
-                new Color(0.03f, 0.04f, 0.07f, 0.92f)).gameObject;
+                new Color(0.04f, 0.06f, 0.09f, 0.94f)).gameObject;
 
-            var row1Y = 18f;
-            var row2Y = -40f;
-            var x = -510f;
-            const float bw = 148f;
-            const float gap = 10f;
-            MakeBtn(_gameRoot.transform, "Mine", "Mine", ref x, row1Y, bw, gap,
-                new Color(0.55f, 0.42f, 0.12f), () => Safe(OnPlaceMine));
-            MakeBtn(_gameRoot.transform, "Barracks", "Barracks", ref x, row1Y, bw, gap,
-                new Color(0.22f, 0.38f, 0.62f), () => Safe(OnPlaceBarracks));
-            MakeBtn(_gameRoot.transform, "Collect", "Collect", ref x, row1Y, bw, gap,
-                new Color(0.62f, 0.48f, 0.10f), () => Safe(OnCollect));
-            MakeBtn(_gameRoot.transform, "Train", "Train ×10", ref x, row1Y, bw, gap,
-                new Color(0.28f, 0.48f, 0.28f), () => Safe(OnTrain));
-            MakeBtn(_gameRoot.transform, "Upgrade", "Upgrade", ref x, row1Y, bw, gap,
-                new Color(0.42f, 0.28f, 0.55f), () => Safe(OnUpgrade));
-
-            x = -510f;
-            MakeBtn(_gameRoot.transform, "Raid", "Start Raid", ref x, row2Y, bw + 10f, gap,
-                new Color(0.62f, 0.22f, 0.18f), () => Safe(OnStartRaid));
-            MakeBtn(_gameRoot.transform, "Complete", "Complete", ref x, row2Y, bw + 10f, gap,
-                new Color(0.55f, 0.28f, 0.18f), () => Safe(OnCompleteRaid));
-            MakeBtn(_gameRoot.transform, "Logout", "Logout", ref x, row2Y, bw, gap,
-                new Color(0.25f, 0.26f, 0.30f), () => Safe(OnLogout));
+            var accent = Panel(_gameRoot.transform, "BarAccent",
+                new Vector2(0.5f, 1f), new Vector2(0.5f, 1f),
+                new Vector2(0f, -2f), new Vector2(1060f, 4f),
+                new Color(0.85f, 0.65f, 0.18f, 0.85f));
+            accent.pivot = new Vector2(0.5f, 1f);
 
             Label(_gameRoot.transform, "Hint",
-                "Simulator: drag / scroll / pinch · bino bos → Upgrade · 1→2→3→4→Raid",
-                15, TextAnchor.LowerLeft, new Vector2(18f, -BottomBarHeight * 0.5f + 16f), new Vector2(1020f, 24f),
-                new Color(0.72f, 0.76f, 0.82f));
+                "Kon/Kazarma → Tasdiq/Aylantir/Bekor · Tanlangan: Yangila/Buz/Tuzat",
+                15, TextAnchor.UpperLeft, new Vector2(20f, -6f), new Vector2(1020f, 22f),
+                new Color(0.78f, 0.82f, 0.88f));
 
-            _resultRoot = Panel(root, "ResultPanel",
+            const float bw = 148f;
+            const float gap = 10f;
+            const float btnH = 48f;
+            var toolsY = 78f;
+            var row1Y = 22f;
+            var row2Y = -36f;
+
+            _placementBar = new GameObject("PlacementBar", typeof(RectTransform));
+            _placementBar.transform.SetParent(_gameRoot.transform, false);
+            var placeRt = _placementBar.GetComponent<RectTransform>();
+            placeRt.anchorMin = new Vector2(0.5f, 0.5f);
+            placeRt.anchorMax = new Vector2(0.5f, 0.5f);
+            placeRt.sizeDelta = new Vector2(1060f, 56f);
+            placeRt.anchoredPosition = new Vector2(0f, toolsY);
+
+            var px = -520f;
+            MakeBtn(_placementBar.transform, "ConfirmPlace", "Tasdiq", ref px, 0f, bw, gap, btnH,
+                new Color(0.18f, 0.52f, 0.28f), () => Safe(OnConfirmPlace));
+            MakeBtn(_placementBar.transform, "RotatePlace", "Aylantir", ref px, 0f, bw, gap, btnH,
+                new Color(0.28f, 0.40f, 0.55f), () => Safe(OnRotatePlace));
+            MakeBtn(_placementBar.transform, "CancelPlace", "Bekor", ref px, 0f, bw, gap, btnH,
+                new Color(0.45f, 0.22f, 0.20f), () => Safe(OnCancelPlace));
+            _placementBar.SetActive(false);
+
+            _buildActionBar = new GameObject("BuildActionBar", typeof(RectTransform));
+            _buildActionBar.transform.SetParent(_gameRoot.transform, false);
+            var buildRt = _buildActionBar.GetComponent<RectTransform>();
+            buildRt.anchorMin = new Vector2(0.5f, 0.5f);
+            buildRt.anchorMax = new Vector2(0.5f, 0.5f);
+            buildRt.sizeDelta = new Vector2(1060f, 56f);
+            buildRt.anchoredPosition = new Vector2(0f, toolsY);
+
+            var bx = -520f;
+            MakeBtn(_buildActionBar.transform, "Destroy", "Buz", ref bx, 0f, bw, gap, btnH,
+                new Color(0.50f, 0.18f, 0.18f), () => Safe(OnDestroyBuilding));
+            MakeBtn(_buildActionBar.transform, "Repair", "Tuzat", ref bx, 0f, bw, gap, btnH,
+                new Color(0.35f, 0.42f, 0.22f), () => Safe(OnRepairBuilding));
+            MakeBtn(_buildActionBar.transform, "CancelUpg", "Bekor yangi", ref bx, 0f, bw, gap, btnH,
+                new Color(0.42f, 0.32f, 0.18f), () => Safe(OnCancelUpgrade));
+
+            _loopActionBar = new GameObject("LoopActionBar", typeof(RectTransform));
+            _loopActionBar.transform.SetParent(_gameRoot.transform, false);
+            var loopRt = _loopActionBar.GetComponent<RectTransform>();
+            loopRt.anchorMin = new Vector2(0.5f, 0.5f);
+            loopRt.anchorMax = new Vector2(0.5f, 0.5f);
+            loopRt.sizeDelta = new Vector2(1060f, 140f);
+            loopRt.anchoredPosition = new Vector2(0f, -8f);
+
+            var x = -520f;
+            MakeBtn(_loopActionBar.transform, "Mine", "Kon", ref x, row1Y + 8f, bw, gap, btnH,
+                new Color(0.52f, 0.40f, 0.12f), () => Safe(OnPlaceMine));
+            MakeBtn(_loopActionBar.transform, "Barracks", "Kazarma", ref x, row1Y + 8f, bw, gap, btnH,
+                new Color(0.20f, 0.36f, 0.58f), () => Safe(OnPlaceBarracks));
+            MakeBtn(_loopActionBar.transform, "Collect", "Yig‘ish", ref x, row1Y + 8f, bw, gap, btnH,
+                new Color(0.58f, 0.46f, 0.10f), () => Safe(OnCollect));
+            MakeBtn(_loopActionBar.transform, "Train", "Askar ×10", ref x, row1Y + 8f, bw, gap, btnH,
+                new Color(0.26f, 0.46f, 0.28f), () => Safe(OnTrain));
+            MakeBtn(_loopActionBar.transform, "Upgrade", "Yangila", ref x, row1Y + 8f, bw, gap, btnH,
+                new Color(0.40f, 0.28f, 0.52f), () => Safe(OnUpgrade));
+
+            x = -520f;
+            MakeBtn(_loopActionBar.transform, "Raid", "Reyd", ref x, row2Y + 8f, bw, gap, btnH,
+                new Color(0.58f, 0.20f, 0.16f), () => Safe(OnStartRaid));
+            var completeBtn = MakeBtn(_loopActionBar.transform, "Complete", "Yakunla", ref x, row2Y + 8f, bw, gap, btnH,
+                new Color(0.50f, 0.26f, 0.16f), () => Safe(OnCompleteRaid));
+            _completeRaidBtn = completeBtn;
+            if (completeBtn != null)
+                _completeRaidLabel = completeBtn.GetComponentInChildren<Text>();
+            completeBtn.interactable = false;
+            MakeBtn(_loopActionBar.transform, "Social", "Ijtimoiy", ref x, row2Y + 8f, bw, gap, btnH,
+                new Color(0.28f, 0.34f, 0.52f), () =>
+                {
+                    if (_busy) return;
+                    ShowSocialSheet(true);
+                });
+            MakeBtn(_loopActionBar.transform, "Logout", "Chiqish", ref x, row2Y + 8f, bw, gap, btnH,
+                new Color(0.22f, 0.24f, 0.28f), () => Safe(OnLogout));
+        }
+
+        Text MakeResourceChip(Transform parent, string name, string initial, Color bg, Color fg, float rightX, float width)
+        {
+            var panel = Panel(parent, name,
+                new Vector2(1f, 1f), new Vector2(1f, 1f),
+                new Vector2(rightX, -10f), new Vector2(width, 36f),
+                bg);
+            panel.pivot = new Vector2(1f, 1f);
+            panel.anchoredPosition = new Vector2(rightX, -10f);
+            panel.sizeDelta = new Vector2(width, 36f);
+            var chip = Label(panel, name + "Txt", initial, 16, TextAnchor.MiddleCenter,
+                new Vector2(4f, -4f), new Vector2(width - 12f, 28f), fg);
+            CenterLabel(chip);
+            return chip;
+        }
+
+        void BuildSocialSheet(Transform root)
+        {
+            var dim = Panel(root, "SocialDim",
+                new Vector2(0f, 0f), new Vector2(1f, 1f),
+                Vector2.zero, Vector2.zero,
+                new Color(0.02f, 0.03f, 0.05f, 0.55f));
+            dim.offsetMin = Vector2.zero;
+            dim.offsetMax = Vector2.zero;
+            _socialSheet = dim.gameObject;
+            var dimBtn = _socialSheet.AddComponent<Button>();
+            dimBtn.transition = Selectable.Transition.None;
+            dimBtn.onClick.AddListener(() => ShowSocialSheet(false));
+
+            var sheet = Panel(dim, "SocialSheet",
+                new Vector2(0.5f, 0f), new Vector2(0.5f, 0f),
+                new Vector2(0f, 230f), new Vector2(720f, 400f),
+                new Color(0.06f, 0.08f, 0.12f, 0.98f));
+            // Panel Image already blocks raycasts so dim-close only fires outside the sheet.
+
+            Label(sheet, "SocialTitle", "Ijtimoiy", 24, TextAnchor.UpperLeft,
+                new Vector2(28f, -20f), new Vector2(400f, 32f), new Color(1f, 0.9f, 0.55f));
+            Label(sheet, "SocialHint", "Klan · Chat · PvP · Turnir · Reklama (+500g/500m/5💎) · Saqlash",
+                15, TextAnchor.UpperLeft, new Vector2(28f, -56f), new Vector2(660f, 28f),
+                new Color(0.78f, 0.82f, 0.88f));
+
+            const float bw = 200f;
+            const float gap = 14f;
+            const float btnH = 52f;
+            var x = -320f;
+            MakeBtn(sheet, "Clan", "Klan", ref x, 80f, bw, gap, btnH,
+                new Color(0.34f, 0.28f, 0.52f), () => { ShowSocialSheet(false); Safe(OnClan); });
+            MakeBtn(sheet, "Chat", "Chat", ref x, 80f, bw, gap, btnH,
+                new Color(0.16f, 0.40f, 0.46f), () => { ShowSocialSheet(false); Safe(OnChat); });
+            MakeBtn(sheet, "Pvp", "PvP", ref x, 80f, bw, gap, btnH,
+                new Color(0.52f, 0.16f, 0.26f), () => { ShowSocialSheet(false); Safe(OnPvp); });
+
+            x = -320f;
+            MakeBtn(sheet, "Cup", "Turnir", ref x, 10f, bw, gap, btnH,
+                new Color(0.52f, 0.40f, 0.12f), () => { ShowSocialSheet(false); Safe(OnTournament); });
+            MakeBtn(sheet, "Ad", "Reklama 📺", ref x, 10f, bw, gap, btnH,
+                new Color(0.46f, 0.32f, 0.12f), () => { ShowSocialSheet(false); Safe(OnRewardedAd); });
+            MakeBtn(sheet, "Save", "Saqlash", ref x, 10f, bw, gap, btnH,
+                new Color(0.18f, 0.42f, 0.36f), () => { ShowSocialSheet(false); Safe(OnManualSave); });
+
+            x = -320f;
+            MakeBtn(sheet, "CloseSocial", "Yopish", ref x, -60f, bw, gap, btnH,
+                new Color(0.22f, 0.24f, 0.28f), () => ShowSocialSheet(false));
+
+            _socialSheet.SetActive(false);
+        }
+
+        void BuildResultPanel(Transform root)
+        {
+            var dim = Panel(root, "ResultDim",
+                new Vector2(0f, 0f), new Vector2(1f, 1f),
+                Vector2.zero, Vector2.zero,
+                new Color(0.02f, 0.03f, 0.05f, 0.55f));
+            dim.offsetMin = Vector2.zero;
+            dim.offsetMax = Vector2.zero;
+            _resultRoot = dim.gameObject;
+            var dimBtn = _resultRoot.AddComponent<Button>();
+            dimBtn.transition = Selectable.Transition.None;
+            dimBtn.onClick.AddListener(() => Safe(OnResultOk));
+
+            var sheet = Panel(dim, "ResultPanel",
                 new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
-                Vector2.zero, new Vector2(720f, 360f),
-                new Color(0.06f, 0.07f, 0.11f, 0.96f)).gameObject;
-            _resultBody = Label(_resultRoot.transform, "Body", "", 22, TextAnchor.UpperLeft,
-                new Vector2(24f, -24f), new Vector2(670f, 240f), new Color(1f, 0.95f, 0.7f));
+                Vector2.zero, new Vector2(720f, 380f),
+                new Color(0.06f, 0.07f, 0.11f, 0.98f));
+
+            Label(sheet, "ResultTitle", "Reyd natijasi", 24, TextAnchor.UpperLeft,
+                new Vector2(28f, -20f), new Vector2(400f, 32f), new Color(1f, 0.9f, 0.55f));
+
+            var starChip = Panel(sheet, "StarChip",
+                new Vector2(0f, 1f), new Vector2(0f, 1f),
+                new Vector2(28f, -70f), new Vector2(200f, 48f),
+                new Color(0.42f, 0.32f, 0.08f, 0.95f));
+            starChip.pivot = new Vector2(0f, 1f);
+            _resultStars = Label(starChip, "StarTxt", "★  0", 22, TextAnchor.MiddleCenter,
+                new Vector2(8f, -8f), new Vector2(184f, 32f), new Color(1f, 0.92f, 0.4f));
+            CenterLabel(_resultStars);
+
+            var lootChip = Panel(sheet, "LootChip",
+                new Vector2(0f, 1f), new Vector2(0f, 1f),
+                new Vector2(250f, -70f), new Vector2(220f, 48f),
+                new Color(0.38f, 0.26f, 0.06f, 0.95f));
+            lootChip.pivot = new Vector2(0f, 1f);
+            _resultLoot = Label(lootChip, "LootTxt", "Loot 0", 20, TextAnchor.MiddleCenter,
+                new Vector2(8f, -8f), new Vector2(204f, 32f), new Color(1f, 0.88f, 0.28f));
+            CenterLabel(_resultLoot);
+
+            _resultBody = Label(sheet, "Body", "", 20, TextAnchor.UpperLeft,
+                new Vector2(28f, -140f), new Vector2(660f, 140f), new Color(1f, 0.95f, 0.7f));
             var okX = -100f;
-            MakeBtn(_resultRoot.transform, "Ok", "OK — bazaga", ref okX, -140f, 280f, 0f,
+            MakeBtn(sheet, "Ok", "OK — bazaga", ref okX, -150f, 280f, 0f, 52f,
                 new Color(0.28f, 0.48f, 0.28f), () => Safe(OnResultOk));
         }
 
@@ -237,7 +564,7 @@ namespace KoG.MiniMvp.UI
                 new Vector2(0f, 220f), new Vector2(740f, 400f),
                 new Color(0.05f, 0.06f, 0.09f, 0.94f)).gameObject;
 
-            Label(_authRoot.transform, "AuthTitle", "Simulator kirish", 26, TextAnchor.UpperLeft,
+            Label(_authRoot.transform, "AuthTitle", "Kingdoms of Glory", 26, TextAnchor.UpperLeft,
                 new Vector2(28f, -18f), new Vector2(680f, 34f), new Color(1f, 0.9f, 0.55f));
 
             _userField = Field(_authRoot.transform, "Username", "player1", new Vector2(28f, -70f), false);
@@ -246,15 +573,15 @@ namespace KoG.MiniMvp.UI
             _passwordField = Field(_authRoot.transform, "Password", "TestPass123!@#", new Vector2(28f, -220f), true);
 
             var x = -330f;
-            MakeBtn(_authRoot.transform, "Guest", "▶  Guest Play", ref x, -155f, 200f, 14f,
+            MakeBtn(_authRoot.transform, "Guest", "▶  Mehmon", ref x, -155f, 200f, 14f, 52f,
                 new Color(0.18f, 0.52f, 0.32f), () => Safe(OnGuest));
-            MakeBtn(_authRoot.transform, "Login", "Login", ref x, -155f, 140f, 14f,
+            MakeBtn(_authRoot.transform, "Login", "Kirish", ref x, -155f, 140f, 14f, 52f,
                 new Color(0.22f, 0.35f, 0.55f), () => Safe(OnLogin));
-            MakeBtn(_authRoot.transform, "Register", "Register", ref x, -155f, 150f, 14f,
+            MakeBtn(_authRoot.transform, "Register", "Ro‘yxat", ref x, -155f, 150f, 14f, 52f,
                 new Color(0.35f, 0.28f, 0.48f), () => Safe(OnRegister));
 
             Label(_authRoot.transform, "AuthHint",
-                "Guest = tez test. Drag maydon, scroll zoom. Release emas — faqat simulator.",
+                "Mehmon = tez start. Maydonni sudrab, pinch bilan zoom.",
                 15, TextAnchor.LowerLeft, new Vector2(28f, -380f), new Vector2(680f, 28f),
                 new Color(0.75f, 0.78f, 0.85f));
         }
@@ -327,7 +654,16 @@ namespace KoG.MiniMvp.UI
         void Safe(Action action)
         {
             if (_busy || action == null) return;
+            KoG.MiniMvp.Audio.MiniAudio.PlayTap();
             action();
+        }
+
+        static string MuteLabel() =>
+            KoG.MiniMvp.Audio.MiniAudio.Muted ? "🔇" : "🔊";
+
+        void RefreshMuteLabel()
+        {
+            if (_muteLabel != null) _muteLabel.text = MuteLabel();
         }
 
         static RectTransform Panel(Transform parent, string name, Vector2 anchorMin, Vector2 anchorMax,
@@ -367,8 +703,8 @@ namespace KoG.MiniMvp.UI
             return t;
         }
 
-        static void MakeBtn(Transform parent, string name, string label, ref float x, float y, float width, float gap,
-            Color color, Action onClick)
+        Button MakeBtn(Transform parent, string name, string label, ref float x, float y, float width, float gap,
+            float height, Color color, Action onClick)
         {
             var go = new GameObject(name, typeof(RectTransform), typeof(Image), typeof(Button));
             go.transform.SetParent(parent, false);
@@ -377,32 +713,38 @@ namespace KoG.MiniMvp.UI
             rt.anchorMax = new Vector2(0.5f, 0.5f);
             rt.pivot = new Vector2(0.5f, 0.5f);
             rt.anchoredPosition = new Vector2(x + width * 0.5f, y);
-            rt.sizeDelta = new Vector2(width, 48f);
+            rt.sizeDelta = new Vector2(width, height);
             go.GetComponent<Image>().color = color;
             var btn = go.GetComponent<Button>();
             var colors = btn.colors;
-            colors.highlightedColor = Color.Lerp(color, Color.white, 0.22f);
-            colors.pressedColor = Color.Lerp(color, Color.black, 0.25f);
+            colors.normalColor = color;
+            colors.highlightedColor = Color.Lerp(color, Color.white, 0.18f);
+            colors.pressedColor = Color.Lerp(color, Color.black, 0.22f);
+            colors.selectedColor = Color.Lerp(color, Color.white, 0.10f);
             colors.disabledColor = new Color(0.2f, 0.2f, 0.22f, 0.7f);
             btn.colors = colors;
             btn.onClick.AddListener(() => onClick?.Invoke());
+            _actionButtons.Add(btn);
 
             var labelGo = new GameObject("Label", typeof(RectTransform), typeof(Text));
             labelGo.transform.SetParent(go.transform, false);
             var lrt = labelGo.GetComponent<RectTransform>();
             lrt.anchorMin = Vector2.zero;
             lrt.anchorMax = Vector2.one;
-            lrt.offsetMin = Vector2.zero;
-            lrt.offsetMax = Vector2.zero;
+            lrt.offsetMin = new Vector2(4f, 2f);
+            lrt.offsetMax = new Vector2(-4f, -2f);
             var t = labelGo.GetComponent<Text>();
             t.font = BuiltinFont();
             t.text = label;
-            t.fontSize = 17;
+            t.fontSize = label.Length > 10 ? 15 : 17;
             t.fontStyle = FontStyle.Bold;
             t.alignment = TextAnchor.MiddleCenter;
             t.color = Color.white;
+            t.horizontalOverflow = HorizontalWrapMode.Overflow;
+            t.verticalOverflow = VerticalWrapMode.Truncate;
 
             x += width + gap;
+            return btn;
         }
     }
 }

@@ -2,9 +2,13 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Text;
+using KoG.MiniMvp.Audio;
+using KoG.MiniMvp.Buildings;
 using KoG.MiniMvp.Camera;
 using KoG.MiniMvp.Lighting;
 using KoG.MiniMvp.Network;
+using KoG.MiniMvp.Save;
+using KoG.MiniMvp.Troops;
 using KoG.MiniMvp.UI;
 using KoG.MiniMvp.World;
 using UnityEngine;
@@ -46,13 +50,27 @@ namespace KoG.MiniMvp.App
 
         readonly Dictionary<string, GameObject> _buildingViews = new Dictionary<string, GameObject>();
         long _gold;
+        long _mana;
+        long _diamond;
         int _barbarianCount;
         float _raidStartedAt = -999f;
+        bool _raidActive;
+        Coroutine _raidCountdownCo;
+        string _pendingDestroyId;
+        int _stateLoadGen;
         string _selectedBuildingId;
         bool _busy;
         Transform _fieldRoot;
+        Transform _villageGameplay;
         CoCCameraController _cocCamera;
         MiniMvpHud _hud;
+        SocialPillarsController _social;
+        BuildingSystem _buildings;
+        BuildingGrid _buildingGrid;
+        PlacementInputDriver _placementInput;
+        TroopSystem _troops;
+        TroopInputDriver _troopInput;
+        SaveSystem _save;
 
         GUIStyle _titleStyle;
         GUIStyle _statusStyle;
@@ -66,9 +84,44 @@ namespace KoG.MiniMvp.App
 
         Vector3 GridToWorld(int gridX, int gridZ) => new Vector3(gridX * cellSize, 0f, gridZ * cellSize);
 
+        /// <summary>
+        /// Castle visual is wider than 1 cell — push mine/barracks off the keep-out ring so they do not clip.
+        /// </summary>
+        const int CastleKeepOutChebyshev = 3;
+
+        Vector3 ResolveBuildingWorldPos(string type, int gridX, int gridZ)
+        {
+            var world = GridToWorld(gridX, gridZ);
+            if (type == "castle") return world;
+
+            var cx = gridSize / 2;
+            var cz = gridSize / 2;
+            var dx = (float)(gridX - cx);
+            var dz = (float)(gridZ - cz);
+            var cheb = Mathf.Max(Mathf.Abs(dx), Mathf.Abs(dz));
+            if (cheb >= CastleKeepOutChebyshev) return world;
+
+            // AI-assisted: nudge overlapping legacy placements outward along castle→building direction.
+            var len = Mathf.Sqrt(dx * dx + dz * dz);
+            if (len < 0.01f)
+            {
+                dx = 1f;
+                dz = 0f;
+                len = 1f;
+            }
+
+            var scale = CastleKeepOutChebyshev / len;
+            return new Vector3(
+                (cx + dx * scale) * cellSize,
+                0f,
+                (cz + dz * scale) * cellSize);
+        }
+
         string ResolveBaseUrl()
         {
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
+            // Keep releaseBaseUrl referenced so Inspector value is not stripped / CS0414-warned.
+            _ = releaseBaseUrl;
             return string.IsNullOrWhiteSpace(baseUrl) ? "http://127.0.0.1:3000" : baseUrl.Trim();
 #else
             var url = string.IsNullOrWhiteSpace(releaseBaseUrl) ? baseUrl : releaseBaseUrl;
@@ -97,10 +150,15 @@ namespace KoG.MiniMvp.App
             // Faqat Resources orqali spawn qilingan castle_1 ishlatiladi.
             DestroyLooseSceneCastles();
             BuildGround();
+            EnsureBuildingSystem();
+            EnsureTroopSystem();
+            EnsureSaveSystem();
+            EnsureSocial();
             EnsureHud();
             if (SessionStore.HasSession)
             {
                 SetScreen(UiScreen.Game);
+                _save?.SyncFromCloud(SessionStore.PlayerId);
                 StartCoroutine(LoadPlayerState());
             }
             else
@@ -131,18 +189,59 @@ namespace KoG.MiniMvp.App
         {
             if (_hud != null) return;
             _hud = MiniMvpHud.Ensure(transform);
-            _hud.OnPlaceMine = () => StartCoroutine(PlaceBuilding("gold_mine"));
-            _hud.OnPlaceBarracks = () => StartCoroutine(PlaceBuilding("barracks"));
+            _hud.OnPlaceMine = () => BeginPlace("gold_mine");
+            _hud.OnPlaceBarracks = () => BeginPlace("barracks");
+            _hud.OnConfirmPlace = () =>
+            {
+                if (_buildings == null) return;
+                StartCoroutine(ConfirmPlaceAndReload());
+            };
+            _hud.OnCancelPlace = () =>
+            {
+                _buildings?.CancelPlacement();
+                _hud.SetPlacementMode(false);
+                if (_troopInput != null) _troopInput.SetEnabled(true);
+            };
+            _hud.OnRotatePlace = () => _buildings?.RotatePlacement();
             _hud.OnCollect = () => StartCoroutine(CollectGold());
             _hud.OnTrain = () => StartCoroutine(TrainTroops(10));
             _hud.OnUpgrade = () => StartCoroutine(UpgradeSelected());
+            _hud.OnDestroyBuilding = () =>
+            {
+                if (string.IsNullOrEmpty(_selectedBuildingId) ||
+                    _selectedBuildingId == "local_castle_fallback")
+                {
+                    SetStatus("Bino tanlang");
+                    return;
+                }
+
+                if (_pendingDestroyId != _selectedBuildingId)
+                {
+                    _pendingDestroyId = _selectedBuildingId;
+                    SetStatus("Destroy? Yana bir marta bosing (tasdiq)");
+                    return;
+                }
+
+                _pendingDestroyId = null;
+                StartCoroutine(DestroySelected());
+            };
+            _hud.OnRepairBuilding = () => StartCoroutine(RepairSelected());
+            _hud.OnCancelUpgrade = () => StartCoroutine(CancelUpgradeSelected());
             _hud.OnStartRaid = () => StartCoroutine(StartRaid());
             _hud.OnCompleteRaid = () => StartCoroutine(CompleteRaid());
             _hud.OnLogout = () =>
             {
+                EnsureSaveSystem();
+                SyncDeviceSettingsToSave();
+                _save?.ForceSave();
                 SessionStore.Clear();
+                _buildings?.CancelPlacement();
+                _troops?.ClearAll();
                 ClearBuildings();
                 BuildingSelectFx.Clear();
+                PlacePreviewFx.Hide();
+                if (_hud != null) _hud.SetPlacementMode(false);
+                if (_troopInput != null) _troopInput.SetEnabled(false);
                 SetScreen(UiScreen.Auth);
                 SetStatus("Logged out");
             };
@@ -162,8 +261,185 @@ namespace KoG.MiniMvp.App
                 StartCoroutine(Login());
             };
             _hud.OnGuest = () => StartCoroutine(GuestLogin());
+            _hud.OnClan = () => StartCoroutine(_social.CreateClan());
+            _hud.OnChat = () => StartCoroutine(_social.SendGlobalChat());
+            _hud.OnPvp = () => StartCoroutine(_social.FindPvp());
+            _hud.OnTournament = () => StartCoroutine(_social.JoinTournament());
+            _hud.OnRewardedAd = () => StartCoroutine(_social.ClaimRewardedAd((g, m, d) =>
+            {
+                if (g > 0) _gold = g;
+                if (m > 0) _mana = m;
+                if (d > 0) _diamond = d;
+                MiniAudio.PlayCollect();
+                RefreshHud();
+            }));
+            _hud.OnManualSave = () =>
+            {
+                EnsureSaveSystem();
+                SyncDeviceSettingsToSave();
+                var result = _save.ManualSave();
+                SetStatus(result.Success
+                    ? "Saqlandi (r" + _save.Revision + ")"
+                    : "Saqlash xato: " + result.Message);
+            };
+            _hud.OnRetryLoad = () =>
+            {
+                if (!SessionStore.HasSession)
+                {
+                    SetStatus("Avval Guest/Login qiling");
+                    return;
+                }
+                StartCoroutine(LoadPlayerState());
+            };
             _hud.SetAuthFields(_username, _displayName, _email, _password);
             RefreshHud();
+        }
+
+        void EnsureBuildingSystem()
+        {
+            if (_buildingGrid == null)
+            {
+                var parent = _fieldRoot != null ? _fieldRoot : transform;
+                _buildingGrid = BuildingGrid.Build(parent, gridSize, cellSize, FieldCenter);
+            }
+
+            if (_buildings == null)
+            {
+                _buildings = GetComponent<BuildingSystem>();
+                if (_buildings == null) _buildings = gameObject.AddComponent<BuildingSystem>();
+                _buildings.Configure(_api, () => SessionStore.Token, () => SessionStore.PlayerId, _buildingGrid);
+                _buildings.StatusChanged += msg => SetStatus(msg);
+                _buildings.MutationSucceeded += () =>
+                {
+                    if (_hud != null) _hud.SetPlacementMode(false);
+                    if (_troopInput != null) _troopInput.SetEnabled(true);
+                };
+            }
+
+            if (_placementInput == null)
+            {
+                _placementInput = GetComponent<PlacementInputDriver>();
+                if (_placementInput == null) _placementInput = gameObject.AddComponent<PlacementInputDriver>();
+                var cam = UnityEngine.Camera.main;
+                _placementInput.Bind(_buildings, cam);
+            }
+        }
+
+        void BeginPlace(string buildingType)
+        {
+            EnsureBuildingSystem();
+            if (_buildings == null) return;
+            if (_buildings.BeginPlacement(buildingType))
+            {
+                if (_hud != null) _hud.SetPlacementMode(true);
+                if (_troopInput != null) _troopInput.SetEnabled(false);
+            }
+        }
+
+        IEnumerator ConfirmPlaceAndReload()
+        {
+            if (_buildings == null) yield break;
+            SetBusy(true);
+            yield return _buildings.ConfirmPlacement();
+            SetBusy(false);
+            if (_hud != null) _hud.SetPlacementMode(_buildings.IsPlacing);
+            if (_troopInput != null) _troopInput.SetEnabled(!_buildings.IsPlacing);
+            if (!_buildings.IsPlacing)
+            {
+                yield return LoadPlayerState();
+                // Bounce the most recently selected / newest building.
+                if (!string.IsNullOrEmpty(_selectedBuildingId) &&
+                    _buildingViews.TryGetValue(_selectedBuildingId, out var go) && go != null)
+                    WorldFeedback.PlaceDrop(go.transform);
+            }
+        }
+
+        void EnsureTroopSystem()
+        {
+            if (_troops == null)
+            {
+                _troops = GetComponent<TroopSystem>();
+                if (_troops == null) _troops = gameObject.AddComponent<TroopSystem>();
+                var world = ResolveGameplayRoot();
+                _troops.Configure(world != null ? world : transform, null, gridSize, cellSize);
+                _troops.StatusChanged += msg => SetStatus(msg);
+            }
+
+            if (_troopInput == null)
+            {
+                _troopInput = GetComponent<TroopInputDriver>();
+                if (_troopInput == null) _troopInput = gameObject.AddComponent<TroopInputDriver>();
+                _troopInput.Bind(_troops, UnityEngine.Camera.main);
+            }
+        }
+
+        void EnsureSaveSystem()
+        {
+            if (_save == null)
+            {
+                _save = GetComponent<SaveSystem>();
+                if (_save == null) _save = gameObject.AddComponent<SaveSystem>();
+                _save.Configure(encrypt: true, cloudMirror: true, autoInterval: 45f);
+                _save.StatusChanged += msg => Debug.Log("[Save] " + msg);
+                if (_save.DeviceSettings != null)
+                    MiniAudio.Muted = _save.DeviceSettings.muted;
+            }
+
+            if (_api != null && _save != null)
+                _save.BindHttpCloud(_api, () => SessionStore.Token);
+        }
+
+        void SyncDeviceSettingsToSave()
+        {
+            EnsureSaveSystem();
+            if (_save == null) return;
+            var settings = _save.DeviceSettings ?? new DeviceSettingsPayload();
+            settings.muted = MiniAudio.Muted;
+            _save.SetDeviceSettings(settings);
+        }
+
+        Vector3 ResolveTroopGatherCenter()
+        {
+            foreach (var view in _buildingViews.Values)
+            {
+                if (view == null) continue;
+                var m = view.GetComponent<BuildingMarker>();
+                if (m != null && m.buildingType == "barracks")
+                    return view.transform.position;
+            }
+
+            return FieldCenter + new Vector3(cellSize * 2f, 0f, 0f);
+        }
+
+        void SyncTroopVisuals()
+        {
+            EnsureTroopSystem();
+            if (_troops == null) return;
+            _troops.SyncArmyCount("barbarian", _barbarianCount, ResolveTroopGatherCenter());
+            RefreshAiPathObstacles();
+            if (_troopInput != null)
+                _troopInput.SetEnabled(_buildings == null || !_buildings.IsPlacing);
+        }
+
+        void RefreshAiPathObstacles()
+        {
+            if (_troops == null) return;
+            var blocked = new System.Collections.Generic.List<Vector3>(16);
+            foreach (var view in _buildingViews.Values)
+            {
+                if (view == null) continue;
+                blocked.Add(view.transform.position);
+            }
+
+            _troops.RefreshPathObstacles(blocked);
+        }
+
+        void EnsureSocial()
+        {
+            if (_social != null) return;
+            _social = GetComponent<SocialPillarsController>();
+            if (_social == null) _social = gameObject.AddComponent<SocialPillarsController>();
+            _social.Bind(_api, SetStatus, SetBusy, ExtractError);
         }
 
         void PullAuthFields()
@@ -191,7 +467,7 @@ namespace KoG.MiniMvp.App
             if (_hud == null) return;
             _hud.SetBusy(_busy);
             _hud.SetStatus(_status);
-            _hud.SetResources(_gold, _barbarianCount);
+            _hud.SetResources(_gold, _mana, _diamond, _barbarianCount);
             if (_screen == UiScreen.Result)
                 _hud.SetResultMessage(_resultMessage);
 
@@ -199,19 +475,49 @@ namespace KoG.MiniMvp.App
                 _buildingViews.TryGetValue(_selectedBuildingId, out var sel) && sel != null)
             {
                 var m = sel.GetComponent<BuildingMarker>();
-                _hud.SetSelected(m != null ? PrettyType(m.buildingType) + " L" + m.level : _selectedBuildingId);
+                var label = m != null ? PrettyType(m.buildingType) + " L" + m.level : _selectedBuildingId;
+                var construct = _buildings != null ? _buildings.DescribeConstruction(_selectedBuildingId) : null;
+                if (!string.IsNullOrEmpty(construct)) label += " · " + construct;
+                if (m != null && _buildings != null &&
+                    _buildings.TryGet(_selectedBuildingId, out var inst) && inst.IsDamaged)
+                    label += " · damaged";
+                _hud.SetSelected(label);
             }
             else
             {
                 _hud.SetSelected(null);
             }
+
+            if (_hud != null && _buildings != null)
+                _hud.SetPlacementMode(_buildings.IsPlacing);
+
+            SyncConstructionWorldBar();
+        }
+
+        void SyncConstructionWorldBar()
+        {
+            if (string.IsNullOrEmpty(_selectedBuildingId) ||
+                !_buildingViews.TryGetValue(_selectedBuildingId, out var go) || go == null)
+                return;
+
+            if (_buildings == null ||
+                !_buildings.TryGet(_selectedBuildingId, out var inst) ||
+                !inst.IsUnderConstruction)
+            {
+                ConstructionWorldBar.Clear(go.transform);
+                return;
+            }
+
+            var left = inst.ConstructionSecondsLeft;
+            var total = Mathf.Max(left, 1);
+            ConstructionWorldBar.Attach(go.transform, total, left);
         }
 
         static string PrettyType(string type)
         {
-            if (type == "gold_mine") return "Gold Mine";
-            if (type == "barracks") return "Barracks";
-            if (type == "castle") return "Castle";
+            if (type == "gold_mine") return "Kon";
+            if (type == "barracks") return "Kazarma";
+            if (type == "castle") return "Qasr";
             return type ?? "?";
         }
 
@@ -294,6 +600,9 @@ namespace KoG.MiniMvp.App
                     Destroy(b);
             }
 
+            // Sky color owned by BaseLightingSetup.Apply — do not override here.
+            cam.allowHDR = false;
+
             return cam;
         }
 
@@ -327,7 +636,8 @@ namespace KoG.MiniMvp.App
             var id = Guid.NewGuid().ToString("N").Substring(0, 8);
             _username = "guest_" + id;
             _displayName = "Guest";
-            _email = _username + "@guest.local";
+            // Strict email validators reject .local — use RFC example.com for guest sims.
+            _email = _username + "@guest.example.com";
             _password = "GuestPass123!@#";
             if (_hud != null) _hud.SetAuthFields(_username, _displayName, _email, _password);
             SetStatus("Guest akkaunt yaratilmoqda...");
@@ -350,14 +660,17 @@ namespace KoG.MiniMvp.App
                 SetBusy(false);
                 if (code < 200 || code >= 300)
                 {
-                    SetStatus("Register failed: " + ExtractError(text));
+                    MiniAudio.PlayError();
+                    SetStatus("Ro‘yxat xato: " + ExtractError(text));
                     return;
                 }
 
                 var res = JsonUtility.FromJson<AuthResponse>(text);
                 SessionStore.Save(res.playerId, res.token, res.refreshToken);
+                EnsureSaveSystem();
+                _save?.SyncFromCloud(res.playerId);
                 SetScreen(UiScreen.Game);
-                SetStatus("Registered. Endi Place Mine bosing.");
+                SetStatus("Ro‘yxat OK. Endi Kon → Tasdiq.");
                 StartCoroutine(LoadPlayerState());
             });
         }
@@ -365,7 +678,7 @@ namespace KoG.MiniMvp.App
         IEnumerator Login()
         {
             SetBusy(true);
-            SetStatus("Logging in...");
+            SetStatus("Kirilmoqda...");
             var body = JsonObject(
                 ("username", _username.Trim()),
                 ("password", _password)
@@ -376,35 +689,49 @@ namespace KoG.MiniMvp.App
                 SetBusy(false);
                 if (code < 200 || code >= 300)
                 {
-                    SetStatus("Login failed: " + ExtractError(text));
+                    MiniAudio.PlayError();
+                    SetStatus("Kirish xato: " + ExtractError(text));
                     return;
                 }
 
                 var res = JsonUtility.FromJson<AuthResponse>(text);
                 SessionStore.Save(res.playerId, res.token, res.refreshToken);
-                if (res.player != null) _gold = res.player.gold;
+                ApplyPlayerBalances(res.player);
+                EnsureSaveSystem();
+                _save?.SyncFromCloud(res.playerId);
                 SetScreen(UiScreen.Game);
-                SetStatus("Logged in.");
+                SetStatus("Kirish OK.");
                 StartCoroutine(LoadPlayerState());
             });
         }
 
         IEnumerator LoadPlayerState()
         {
+            var gen = ++_stateLoadGen;
             SetBusy(true);
-            SetStatus("Loading base...");
+            if (_hud != null) _hud.ClearError();
+            SetStatus("Baza yuklanmoqda…");
             yield return _api.GetJson("/api/v1/player/state", SessionStore.Token, (code, text) =>
             {
+                if (gen != _stateLoadGen) return;
                 SetBusy(false);
                 if (code < 200 || code >= 300)
                 {
-                    SetStatus("State load failed: " + ExtractError(text));
+                    MiniAudio.PlayError();
+                    var msg = "Baza yuklanmadi: " + ExtractError(text);
+                    SetStatus(msg);
+                    if (_hud != null) _hud.ShowError(msg + " — Qayta urin ni bosing.", true);
                     return;
                 }
 
+                if (_hud != null) _hud.ClearError();
                 var state = JsonUtility.FromJson<PlayerStateResponse>(text);
-                ClearBuildings();
-                if (state.player != null) _gold = state.player.gold;
+                if (state.player != null)
+                {
+                    _gold = state.player.gold;
+                    _mana = state.player.mana;
+                    _diamond = state.player.diamond;
+                }
 
                 _barbarianCount = 0;
                 if (state.troops != null)
@@ -419,12 +746,18 @@ namespace KoG.MiniMvp.App
                 var hasBarracks = false;
                 var hasCastle = false;
                 var buildingCount = 0;
+                var lite = ToLite(state.buildings);
+                BuildingViewSync.Sync(
+                    _buildingViews,
+                    lite,
+                    SpawnBuilding,
+                    go => { if (go != null) Destroy(go); });
+
                 if (state.buildings != null)
                 {
                     foreach (var building in state.buildings)
                     {
                         buildingCount++;
-                        SpawnBuilding(building.id, building.type, building.level, building.gridX, building.gridZ);
                         if (building.type == "castle")
                         {
                             hasCastle = true;
@@ -435,12 +768,17 @@ namespace KoG.MiniMvp.App
                     }
                 }
 
+                EnsureBuildingSystem();
+                _buildings?.SyncFromServer(state.buildings);
+                if (!string.IsNullOrEmpty(_selectedBuildingId))
+                    _buildings?.BindConstructionTimer(_selectedBuildingId);
+
                 // Safety: empty base still shows a center castle so field never looks abandoned.
                 if (!hasCastle)
                 {
                     var cx = gridSize / 2;
                     var cz = gridSize / 2;
-                    SpawnBuilding("local_castle_fallback", "castle", 1, cx, cz);
+                    SpawnBuilding("local_castle_fallback", "castle", 1, cx, cz, 0);
                     _selectedBuildingId = "local_castle_fallback";
                     buildingCount++;
                     Debug.LogWarning("[MiniMvp] Server castle missing — spawned center fallback");
@@ -453,98 +791,121 @@ namespace KoG.MiniMvp.App
                     BuildingSelectFx.Select(selGo);
                 else
                     BuildingSelectFx.Clear();
+                SyncTroopVisuals();
                 RefreshHud();
+                EnsureSaveSystem();
+                _save.CapturePlayerState(state);
             });
+        }
+
+        static BuildingViewSync.BuildingDtoLite[] ToLite(BuildingDto[] buildings)
+        {
+            if (buildings == null || buildings.Length == 0)
+                return Array.Empty<BuildingViewSync.BuildingDtoLite>();
+            var lite = new BuildingViewSync.BuildingDtoLite[buildings.Length];
+            for (var i = 0; i < buildings.Length; i++)
+            {
+                var b = buildings[i];
+                if (b == null) continue;
+                lite[i] = new BuildingViewSync.BuildingDtoLite
+                {
+                    Id = b.id,
+                    Type = b.type,
+                    Level = b.level,
+                    GridX = b.gridX,
+                    GridZ = b.gridZ,
+                    RotationSteps = b.rotationSteps
+                };
+            }
+            return lite;
+        }
+
+        void ApplyPlayerBalances(PlayerSummary player)
+        {
+            if (player == null) return;
+            _gold = player.gold;
+            _mana = player.mana;
+            _diamond = player.diamond;
         }
 
         static string BuildNextStepHint(bool hasMine, bool hasBarracks, int buildingCount)
         {
-            if (!hasMine) return "Base OK (" + buildingCount + " bino). Keyingi: Place Mine";
-            if (!hasBarracks) return "Mine bor. Keyingi: Place Barracks";
-            return "Mine+Barracks bor. Keyingi: Collect → Train → Raid (Place qayta bosilmasin)";
+            if (!hasMine) return "Baza OK (" + buildingCount + " bino). Keyingi: Kon → Tasdiq";
+            if (!hasBarracks) return "Kon bor. Keyingi: Kazarma → Tasdiq";
+            return "Kon+Kazarma bor. Keyingi: Yig‘ish → Askar → Reyd";
         }
 
-        IEnumerator PlaceBuilding(string buildingType)
+        IEnumerator UpgradeSelected()
         {
-            foreach (var view in _buildingViews.Values)
+            EnsureBuildingSystem();
+            if (_buildings == null)
             {
-                var marker = view != null ? view.GetComponent<BuildingMarker>() : null;
-                if (marker != null && marker.buildingType == buildingType)
-                {
-                    SetStatus(buildingType + " allaqachon bor — qayta qo'yilmaydi (limit 1). Keyingi qadamga o'ting.");
-                    yield break;
-                }
-            }
-
-            var cell = FindFreeCell();
-            if (cell == null)
-            {
-                SetStatus("No free cell");
-                PlacePreviewFx.Show(FieldCenter, cellSize, false);
+                SetStatus("Building system yo'q");
                 yield break;
             }
 
-            var previewWorld = GridToWorld(cell.Value.x, cell.Value.y);
-            PlacePreviewFx.Show(previewWorld, cellSize, true);
-
             SetBusy(true);
-            SetStatus("Placing " + buildingType + "...");
-            var body = JsonObject(
-                ("playerId", SessionStore.PlayerId),
-                ("buildingType", buildingType),
-                ("gridX", cell.Value.x.ToString()),
-                ("gridZ", cell.Value.y.ToString())
-            );
+            yield return _buildings.UpgradeSelected(_selectedBuildingId);
+            SetBusy(false);
+            yield return LoadPlayerState();
+        }
 
-            yield return _api.PostJson(
-                "/api/v1/buildings/place",
-                body,
-                SessionStore.Token,
-                ApiClient.NewIdempotencyKey(),
-                (code, text) =>
-                {
-                    SetBusy(false);
-                    PlacePreviewFx.Hide();
-                    if (code < 200 || code >= 300)
-                    {
-                        var err = ExtractError(text);
-                        if (err.IndexOf("limit", StringComparison.OrdinalIgnoreCase) >= 0)
-                            SetStatus(buildingType + " limit: allaqachon 1 ta bor. Collect/Train/Raid qiling.");
-                        else
-                            SetStatus("Place failed: " + err);
-                        StartCoroutine(LoadPlayerState());
-                        return;
-                    }
+        IEnumerator DestroySelected()
+        {
+            EnsureBuildingSystem();
+            if (_buildings == null) yield break;
+            var id = _selectedBuildingId;
+            SetBusy(true);
+            yield return _buildings.DestroySelected(id);
+            SetBusy(false);
+            if (_selectedBuildingId == id) _selectedBuildingId = null;
+            yield return LoadPlayerState();
+        }
 
-                    var res = JsonUtility.FromJson<PlaceBuildingResponse>(text);
-                    _gold = res.goldBalance;
-                    SpawnBuilding(res.building.id, res.building.type, res.building.level, res.building.gridX, res.building.gridZ);
-                    _selectedBuildingId = res.building.id;
-                    var world = GridToWorld(res.building.gridX, res.building.gridZ);
-                    WorldFeedback.PlaceBurst(world);
-                    BuildingSelectFx.Select(_buildingViews[res.building.id]);
-                    if (_cocCamera != null) _cocCamera.FocusSmooth(world);
-                    SetStatus("OK: " + PrettyType(buildingType) + " qo'yildi");
-                    RefreshHud();
-                });
+        IEnumerator RepairSelected()
+        {
+            EnsureBuildingSystem();
+            if (_buildings == null) yield break;
+            SetBusy(true);
+            yield return _buildings.RepairSelected(_selectedBuildingId);
+            SetBusy(false);
+            yield return LoadPlayerState();
+        }
+
+        IEnumerator CancelUpgradeSelected()
+        {
+            EnsureBuildingSystem();
+            if (_buildings == null) yield break;
+            SetBusy(true);
+            yield return _buildings.CancelUpgrade(_selectedBuildingId);
+            SetBusy(false);
+            yield return LoadPlayerState();
         }
 
         IEnumerator CollectGold()
         {
             SetBusy(true);
-            SetStatus("Collecting...");
-            var before = _gold;
+            SetStatus("Yig‘ilmoqda…");
+            var beforeGold = _gold;
+            var beforeMana = _mana;
             var body = JsonObject(("playerId", SessionStore.PlayerId));
-            yield return _api.PostJson("/api/v1/resources/collect", body, SessionStore.Token, null, (code, text) =>
+            yield return _api.PostJson("/api/v1/resources/collect", body, SessionStore.Token,
+                ApiClient.NewIdempotencyKey(), (code, text) =>
             {
                 SetBusy(false);
                 if (code < 200 || code >= 300)
                 {
-                    SetStatus("Collect failed: " + ExtractError(text));
+                    MiniAudio.PlayError();
+                    SetStatus("Yig‘ish xato: " + ExtractError(text));
                     return;
                 }
 
-                // Float near selected mine or field center.
+                var collected = JsonUtility.FromJson<CollectResponse>(text);
+                var goldDelta = collected != null ? collected.goldCollected : 0;
+                var manaDelta = collected != null ? collected.manaCollected : 0;
+                if (goldDelta > 0) _gold = beforeGold + goldDelta;
+                if (manaDelta > 0) _mana = beforeMana + manaDelta;
+
                 Vector3 floatPos = FieldCenter + Vector3.up;
                 if (!string.IsNullOrEmpty(_selectedBuildingId) &&
                     _buildingViews.TryGetValue(_selectedBuildingId, out var view) && view != null)
@@ -562,9 +923,17 @@ namespace KoG.MiniMvp.App
                     }
                 }
 
-                WorldFeedback.FloatLabel(floatPos, "+GOLD", new Color(1f, 0.85f, 0.2f));
+                var parts = new List<string>(2);
+                if (goldDelta > 0) parts.Add("+" + goldDelta + "●");
+                if (manaDelta > 0) parts.Add("+" + manaDelta + "◆");
+                var label = parts.Count > 0 ? string.Join(" ", parts) : "+0";
+                WorldFeedback.FloatLabel(floatPos, label, new Color(1f, 0.85f, 0.2f));
                 WorldFeedback.PlaceBurst(floatPos);
-                SetStatus("Collected (+ from " + before + "). Yangilanmoqda...");
+                MiniAudio.PlayCollect();
+                RefreshHud();
+                SetStatus(parts.Count > 0
+                    ? "Yig‘ildi " + label + " (oldingi ●" + beforeGold + " ◆" + beforeMana + ")"
+                    : "Yig‘ish: hozircha 0");
                 StartCoroutine(LoadPlayerState());
             });
         }
@@ -572,24 +941,27 @@ namespace KoG.MiniMvp.App
         IEnumerator TrainTroops(int quantity)
         {
             SetBusy(true);
-            SetStatus("Training...");
+            SetStatus("Askar tayyorlanmoqda…");
             var body = JsonObject(
                 ("playerId", SessionStore.PlayerId),
                 ("troopType", "barbarian"),
                 ("quantity", quantity.ToString())
             );
 
-            yield return _api.PostJson("/api/v1/troops/train", body, SessionStore.Token, null, (code, text) =>
+            yield return _api.PostJson("/api/v1/troops/train", body, SessionStore.Token,
+                ApiClient.NewIdempotencyKey(), (code, text) =>
             {
                 SetBusy(false);
                 if (code < 200 || code >= 300)
                 {
-                    SetStatus("Train failed: " + ExtractError(text) + " (avval Barracks + gold kerak)");
+                    MiniAudio.PlayError();
+                    SetStatus("Askar xato: " + ExtractError(text) + " (avval Kazarma + mana)");
                     return;
                 }
 
                 var res = JsonUtility.FromJson<TrainResponse>(text);
                 _barbarianCount += res.trainedQuantity;
+                if (res.totalCostMana > 0) _mana = Math.Max(0, _mana - res.totalCostMana);
                 Vector3 floatPos = FieldCenter + Vector3.up;
                 foreach (var v in _buildingViews.Values)
                 {
@@ -601,83 +973,106 @@ namespace KoG.MiniMvp.App
                     }
                 }
                 WorldFeedback.FloatLabel(floatPos, "+" + res.trainedQuantity + " ⚔", new Color(0.7f, 0.9f, 1f));
-                SetStatus("Trained " + res.trainedQuantity + " · jami " + _barbarianCount);
+                MiniAudio.PlayTrainDone();
+                SetStatus("Askar +" + res.trainedQuantity + " · jami " + _barbarianCount);
+                SyncTroopVisuals();
                 RefreshHud();
             });
-        }
-
-        IEnumerator UpgradeSelected()
-        {
-            if (string.IsNullOrEmpty(_selectedBuildingId))
-            {
-                SetStatus("Avval kub (bino) ustiga bosing yoki Place qiling");
-                yield break;
-            }
-
-            SetBusy(true);
-            SetStatus("Upgrading...");
-            var body = JsonObject(
-                ("playerId", SessionStore.PlayerId),
-                ("buildingId", _selectedBuildingId)
-            );
-
-            yield return _api.PostJson(
-                "/api/v1/buildings/upgrade",
-                body,
-                SessionStore.Token,
-                ApiClient.NewIdempotencyKey(),
-                (code, text) =>
-                {
-                    SetBusy(false);
-                    if (code < 200 || code >= 300)
-                    {
-                        SetStatus("Upgrade failed: " + ExtractError(text));
-                        return;
-                    }
-
-                    SetStatus("Upgrade started");
-                    StartCoroutine(LoadPlayerState());
-                });
         }
 
         IEnumerator StartRaid()
         {
             SetBusy(true);
-            SetStatus("Starting raid...");
+            SetStatus("Reyd boshlanmoqda…");
             var body = JsonObject(
                 ("playerId", SessionStore.PlayerId),
                 ("fortressId", "1")
             );
 
+            var ok = false;
             yield return _api.PostJson("/api/v1/campaign/start", body, SessionStore.Token, null, (code, text) =>
             {
                 SetBusy(false);
                 if (code < 200 || code >= 300)
                 {
-                    SetStatus("Raid start failed: " + ExtractError(text) + " (askar kerak)");
+                    MiniAudio.PlayError();
+                    SetStatus("Reyd start xato: " + ExtractError(text) + " (askar kerak)");
                     return;
                 }
 
+                ok = true;
                 _raidStartedAt = Time.realtimeSinceStartup;
-                SetStatus("Raid boshlandi. 30 soniya kutib, Complete Raid bosing.");
+                _raidActive = true;
+                if (_hud != null) _hud.SetRaidCompleteReady(false, 30);
+                SetStatus("Raid boshlandi — 30 soniya…");
             });
+
+            if (!ok) yield break;
+
+            // Client juice only — server session already started.
+            var from = FindBuildingWorldPos("barracks");
+            if (from.sqrMagnitude < 0.01f) from = FieldCenter;
+            var camp = FieldCenter + new Vector3(4.5f, 0f, 4.5f);
+            RaidPresentationFx.PlayRaidStart(_cocCamera, from, camp);
+
+            if (_raidCountdownCo != null) StopCoroutine(_raidCountdownCo);
+            _raidCountdownCo = StartCoroutine(RaidCountdownThenComplete());
+        }
+
+        IEnumerator RaidCountdownThenComplete()
+        {
+            const float wait = 30f;
+            while (_raidActive)
+            {
+                var left = wait - (Time.realtimeSinceStartup - _raidStartedAt);
+                if (left <= 0f) break;
+                if (_hud != null) _hud.SetRaidCompleteReady(false, Mathf.CeilToInt(left));
+                SetStatus("Reyd: " + Mathf.CeilToInt(left) + "s…");
+                yield return new WaitForSecondsRealtime(0.25f);
+            }
+
+            if (!_raidActive) yield break;
+            if (_hud != null) _hud.SetRaidCompleteReady(true, 0);
+            SetStatus("Reyd tayyor — Yakunla yoki avto…");
+            yield return new WaitForSecondsRealtime(0.35f);
+            if (_raidActive)
+                yield return CompleteRaid();
         }
 
         IEnumerator CompleteRaid()
         {
-            var elapsed = Time.realtimeSinceStartup - _raidStartedAt;
-            if (elapsed < 30f)
+            if (!_raidActive && Time.realtimeSinceStartup - _raidStartedAt > 120f)
             {
-                SetStatus("Hali erta — yana " + Mathf.CeilToInt(30f - elapsed) + " soniya kuting");
+                SetStatus("Avval Raid bosing");
                 yield break;
             }
 
+            var elapsed = Time.realtimeSinceStartup - _raidStartedAt;
+            if (elapsed < 30f)
+            {
+                var left = Mathf.CeilToInt(30f - elapsed);
+                if (_hud != null) _hud.SetRaidCompleteReady(false, left);
+                SetStatus("Hali erta — yana " + left + " soniya");
+                yield break;
+            }
+
+            _raidActive = false;
+            if (_raidCountdownCo != null)
+            {
+                StopCoroutine(_raidCountdownCo);
+                _raidCountdownCo = null;
+            }
+            if (_hud != null) _hud.SetRaidCompleteReady(false, 0);
+
             SetBusy(true);
             SetStatus("Completing raid...");
+            // Payload unchanged — presentation does not alter stars/troops/server math.
             var body =
                 "{\"playerId\":\"" + SessionStore.PlayerId +
                 "\",\"fortressId\":1,\"starsEarned\":1,\"deployTicks\":[{\"troopType\":\"barbarian\"},{\"troopType\":\"barbarian\"},{\"troopType\":\"barbarian\"},{\"troopType\":\"barbarian\"},{\"troopType\":\"barbarian\"},{\"troopType\":\"barbarian\"},{\"troopType\":\"barbarian\"},{\"troopType\":\"barbarian\"},{\"troopType\":\"barbarian\"},{\"troopType\":\"barbarian\"}]}";
 
+            CampaignCompleteResponse res = null;
+            var ok = false;
             yield return _api.PostJson(
                 "/api/v1/campaign/complete",
                 body,
@@ -688,45 +1083,55 @@ namespace KoG.MiniMvp.App
                     SetBusy(false);
                     if (code < 200 || code >= 300)
                     {
-                        SetStatus("Raid complete failed: " + ExtractError(text));
+                        MiniAudio.PlayError();
+                        SetStatus("Reyd yakun xato: " + ExtractError(text));
                         return;
                     }
 
-                    var res = JsonUtility.FromJson<CampaignCompleteResponse>(text);
-                    _gold = res.goldBalance;
-                    var stars = res.battleResult != null ? res.battleResult.stars : res.starsEarned;
-                    var loot = res.loot != null ? res.loot.gold : 0;
-                    _resultMessage = "G'alaba!\nStars: " + stars + "\nLoot: +" + loot + " gold\nBalance: " + _gold;
-                    SetScreen(UiScreen.Result);
-                    SetStatus("Raid complete");
-                    RefreshHud();
+                    res = JsonUtility.FromJson<CampaignCompleteResponse>(text);
+                    ok = true;
                 });
+
+            if (!ok || res == null) yield break;
+
+            _gold = res.goldBalance;
+            var stars = res.battleResult != null ? res.battleResult.stars : res.starsEarned;
+            var loot = res.loot != null ? res.loot.gold : 0;
+            var won = stars > 0;
+            _resultMessage = won
+                ? "G‘alaba!\n★ " + stars + "\nLoot: +" + loot + " ●\nBalans: " + _gold
+                : "Mag‘lubiyat\nLoot: 0\nBalans: " + _gold;
+
+            if (won)
+            {
+                yield return RaidPresentationFx.PlayRaidWin(_cocCamera, FieldCenter, stars, loot);
+                MiniAudio.PlayRaidWin();
+            }
+            else
+            {
+                yield return RaidPresentationFx.PlayRaidLose(_cocCamera, FieldCenter);
+                MiniAudio.PlayRaidLose();
+            }
+
+            SetScreen(UiScreen.Result);
+            if (_hud != null) _hud.SetResultChips(stars, loot, won);
+            SetStatus(won ? "Reyd yakunlandi" : "Reyd mag‘lubiyat");
+            RefreshHud();
         }
 
-        Vector2Int? FindFreeCell()
+        Vector3 FindBuildingWorldPos(string type)
         {
-            var occupied = new HashSet<string>();
             foreach (var view in _buildingViews.Values)
             {
-                var marker = view.GetComponent<BuildingMarker>();
-                if (marker != null) occupied.Add(marker.gridX + ":" + marker.gridZ);
+                if (view == null) continue;
+                var m = view.GetComponent<BuildingMarker>();
+                if (m == null || m.buildingType != type) continue;
+                return view.transform.position;
             }
-
-            for (var z = 0; z < gridSize; z++)
-            {
-                for (var x = 0; x < gridSize; x++)
-                {
-                    // Reserve map center for future castle / HQ — keep empty until gameplay places it.
-                    if (x == gridSize / 2 && z == gridSize / 2) continue;
-                    var key = x + ":" + z;
-                    if (!occupied.Contains(key)) return new Vector2Int(x, z);
-                }
-            }
-
-            return null;
+            return Vector3.zero;
         }
 
-        void SpawnBuilding(string id, string type, int level, int gridX, int gridZ)
+        void SpawnBuilding(string id, string type, int level, int gridX, int gridZ, int rotationSteps = 0)
         {
             if (_buildingViews.ContainsKey(id))
             {
@@ -734,66 +1139,35 @@ namespace KoG.MiniMvp.App
                 _buildingViews.Remove(id);
             }
 
-            GameObject go;
-            if (type == "castle")
+            // Presentation: BuildingArtCatalog prefab (when PreferProcedural=false) else Soft-GO Factory pack.
+            var cell = ResolveBuildingWorldPos(type, gridX, gridZ);
+            GameObject go = BuildingArtCatalog.TryInstantiatePrefab(type, level);
+            if (go != null)
             {
-                // Castle.prefab has Tripo -90° axis fix baked in. CastleMesh.fbx alone lies flat.
-                var prefab = Resources.Load<GameObject>("Buildings/Castle");
-                if (prefab == null) prefab = Resources.Load<GameObject>("Buildings/CastleMesh");
-                if (prefab != null)
-                {
-                    go = Instantiate(prefab);
-                    go.name = type + "_" + level;
-                    go.SetActive(true);
-                    UrpMaterialUtil.RemapToUrp(go);
-                    BuildingFitUtil.ApplyCastleAlbedoIfMissing(go);
-                    var cell = GridToWorld(gridX, gridZ);
-                    BuildingFitUtil.FitToCell(go, cell, 3.8f, forceUpright: true);
-                    BuildingFitUtil.OrientTowardCamera(go, cell);
-                    BuildingFitUtil.EnsureClickCollider(go);
-
-                    var rends = go.GetComponentsInChildren<Renderer>(true);
-                    var hasMesh = false;
-                    if (rends != null)
-                    {
-                        foreach (var r in rends)
-                        {
-                            var mf = r.GetComponent<MeshFilter>();
-                            if (mf != null && mf.sharedMesh != null) { hasMesh = true; break; }
-                        }
-                    }
-                    if (!hasMesh)
-                    {
-                        Debug.LogWarning("[MiniMvp] Castle mesh missing after load — greybox fallback");
-                        Destroy(go);
-                        go = BuildingVisualFactory.CreateGreybox(type, level, GridToWorld(gridX, gridZ));
-                    }
-                    else
-                    {
-                        SetStatus("Castle L1 3D yuklandi");
-                        Debug.Log("[MiniMvp] Castle 3D at " + go.transform.position + " scale=" + go.transform.localScale);
-                    }
-                }
-                else
-                {
-                    Debug.LogWarning("[MiniMvp] Buildings/Castle missing — greybox");
-                    go = BuildingVisualFactory.CreateGreybox(type, level, GridToWorld(gridX, gridZ));
-                }
+                var fp = BuildingArtCatalog.Footprint(type);
+                BuildingFitUtil.FitToCell(go, cell, fp, forceUpright: type == "castle");
+                if (type == "castle") BuildingFitUtil.OrientTowardCamera(go, cell);
+                BuildingFitUtil.EnsureClickCollider(go);
+                Debug.Log("[MiniMvp] Art prefab " + type + " at " + go.transform.position);
             }
             else
             {
-                go = BuildingVisualFactory.Create(type, level, GridToWorld(gridX, gridZ));
+                go = BuildingVisualFactory.Create(type, level, cell);
+                Debug.Log("[MiniMvp] Soft-GO art pack " + type + " L" + level);
             }
 
+            if (rotationSteps != 0)
+                go.transform.rotation = Quaternion.Euler(0f, rotationSteps * 90f, 0f) * go.transform.rotation;
+
             // Keep buildings under Village/Gameplay so scene cleanup never orphans them.
-            var gameplay = GameObject.Find("Village/Gameplay");
+            var gameplay = ResolveGameplayRoot();
             if (gameplay != null)
             {
-                var folder = gameplay.transform.Find("Buildings");
+                var folder = gameplay.Find("Buildings");
                 if (folder == null)
                 {
                     var folderGo = new GameObject("Buildings");
-                    folderGo.transform.SetParent(gameplay.transform, false);
+                    folderGo.transform.SetParent(gameplay, false);
                     folder = folderGo.transform;
                 }
                 go.transform.SetParent(folder, true);
@@ -806,6 +1180,7 @@ namespace KoG.MiniMvp.App
             marker.level = level;
             marker.gridX = gridX;
             marker.gridZ = gridZ;
+            marker.rotationSteps = rotationSteps;
 
             BuildingFitUtil.EnsureClickCollider(go);
 
@@ -813,11 +1188,17 @@ namespace KoG.MiniMvp.App
             if (click == null) click = go.AddComponent<BuildingClickRelay>();
             click.onClick = () =>
             {
+                if (_buildings != null && _buildings.IsPlacing) return;
+                _pendingDestroyId = null;
                 _selectedBuildingId = id;
                 BuildingSelectFx.Select(go);
+                _buildings?.BindConstructionTimer(id);
                 if (_cocCamera != null)
-                    _cocCamera.FocusSmooth(GridToWorld(gridX, gridZ));
-                SetStatus("Selected: " + PrettyType(type) + " L" + level);
+                    _cocCamera.FocusSmooth(ResolveBuildingWorldPos(type, gridX, gridZ));
+                var construct = _buildings != null ? _buildings.DescribeConstruction(id) : null;
+                var label = "Selected: " + PrettyType(type) + " L" + level;
+                if (!string.IsNullOrEmpty(construct)) label += " · " + construct;
+                SetStatus(label);
             };
 
             _buildingViews[id] = go;
@@ -857,6 +1238,14 @@ namespace KoG.MiniMvp.App
 
             if (_cocCamera != null)
                 _cocCamera.FocusBase(focus, FieldWorldSize * 0.62f);
+        }
+
+        Transform ResolveGameplayRoot()
+        {
+            if (_villageGameplay != null) return _villageGameplay;
+            var go = GameObject.Find("Village/Gameplay");
+            if (go != null) _villageGameplay = go.transform;
+            return _villageGameplay;
         }
 
         void ClearBuildings()
@@ -930,6 +1319,7 @@ namespace KoG.MiniMvp.App
         public int level;
         public int gridX;
         public int gridZ;
+        public int rotationSteps;
     }
 
     public sealed class BuildingClickRelay : MonoBehaviour, UnityEngine.EventSystems.IPointerClickHandler

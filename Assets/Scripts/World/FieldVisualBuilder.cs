@@ -46,22 +46,28 @@ namespace KoG.MiniMvp.World
 
             var terrain = new GameObject("Terrain");
             terrain.transform.SetParent(village.transform, false);
+            MarkStatic(terrain);
 
             var environment = new GameObject("Environment");
             environment.transform.SetParent(village.transform, false);
+            MarkStatic(environment);
 
             var nature = new GameObject("Nature");
             nature.transform.SetParent(environment.transform, false);
+            MarkStatic(nature);
 
             var decorations = new GameObject("Decorations");
             decorations.transform.SetParent(environment.transform, false);
+            MarkStatic(decorations);
 
             var gameplay = new GameObject("Gameplay");
             gameplay.transform.SetParent(village.transform, false);
+            // Gameplay stays dynamic — buildings/troops/grid spawn here.
 
             var fieldRoot = new GameObject("BaseField");
             fieldRoot.transform.SetParent(terrain.transform, false);
             fieldRoot.transform.position = fieldCenter;
+            MarkStatic(fieldRoot);
 
             var fieldPrefab = Resources.Load<GameObject>("Environment/BaseField_L1");
             var borderPrefab = Resources.Load<GameObject>("Environment/NatureBorder_L1");
@@ -108,7 +114,14 @@ namespace KoG.MiniMvp.World
                 NatureBorderBuilder.Build(fieldRoot.transform, fieldWorldSize);
                 var fallback = fieldRoot.transform.Find("NatureBorder");
                 if (fallback != null)
+                {
+                    MarkStatic(fallback.gameObject);
                     NatureVisualPolish.Apply(fallback.gameObject, fieldWorldSize, fieldCenter);
+                }
+                var outer = fieldRoot.transform.Find("OuterWorld");
+                if (outer != null) MarkStatic(outer.gameObject);
+                var floor = fieldRoot.transform.Find("ForestFloor");
+                if (floor != null) MarkStatic(floor.gameObject);
             }
 
             // Decorations reserved for future authored props — do not procedural-redesign here.
@@ -187,6 +200,7 @@ namespace KoG.MiniMvp.World
             rend.sharedMaterial = _sharedFieldMat;
             rend.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             rend.receiveShadows = true;
+            MarkStatic(plane);
         }
 
         /// <summary>

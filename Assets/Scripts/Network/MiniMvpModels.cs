@@ -55,6 +55,8 @@ namespace KoG.MiniMvp.Network
         public int gridZ;
         public bool isUnderConstruction;
         public bool isDamaged;
+        public int constructionSecondsLeft;
+        public int rotationSteps;
     }
 
     [Serializable]
@@ -118,6 +120,18 @@ namespace KoG.MiniMvp.Network
         public bool success;
         public int nextLevel;
         public int cost;
+        public int upgradeSeconds;
+        public bool finishedEarly;
+        public string message;
+        public string error;
+    }
+
+    [Serializable]
+    public class DestroyBuildingResponse
+    {
+        public bool success;
+        public int refundGold;
+        public long goldBalance;
         public string message;
         public string error;
     }

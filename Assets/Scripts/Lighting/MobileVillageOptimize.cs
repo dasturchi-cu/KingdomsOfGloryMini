@@ -31,14 +31,15 @@ namespace KoG.MiniMvp.Lighting
             QualitySettings.asyncUploadTimeSlice = 2;
             QualitySettings.asyncUploadBufferSize = 16;
             QualitySettings.streamingMipmapsActive = false;
-            QualitySettings.antiAliasing = 2;
+            // Mid-range Android: MSAA 2/4 is a common GPU bottleneck — prefer off.
+            QualitySettings.antiAliasing = 0;
         }
 
         static void ConfigureBuiltInCamera(UnityEngine.Camera cam)
         {
             if (cam == null) return;
             cam.allowHDR = false;
-            cam.allowMSAA = true;
+            cam.allowMSAA = false;
             cam.depthTextureMode = DepthTextureMode.None;
             cam.layerCullSpherical = true;
         }
@@ -62,11 +63,14 @@ namespace KoG.MiniMvp.Lighting
         static void TryStaticBatch(Transform villageRoot)
         {
             if (villageRoot == null) return;
+            MarkEnvironmentStaticSafe(villageRoot);
             var staticRoots = new System.Collections.Generic.List<GameObject>(4);
             var nature = villageRoot.Find("Environment/Nature");
             var terrain = villageRoot.Find("Terrain");
+            var decorations = villageRoot.Find("Environment/Decorations");
             if (nature != null) staticRoots.Add(nature.gameObject);
             if (terrain != null) staticRoots.Add(terrain.gameObject);
+            if (decorations != null) staticRoots.Add(decorations.gameObject);
             for (var i = 0; i < staticRoots.Count; i++)
             {
                 try { StaticBatchingUtility.Combine(staticRoots[i]); }
@@ -74,6 +78,38 @@ namespace KoG.MiniMvp.Lighting
                 {
                     Debug.LogWarning("[MiniMvp] StaticBatch skip: " + e.Message);
                 }
+            }
+        }
+
+        /// <summary>
+        /// Terrain / nature / decorations only. Never Gameplay, buildings, troops, UI, camera.
+        /// </summary>
+        static void MarkEnvironmentStaticSafe(Transform villageRoot)
+        {
+            MarkBranchStatic(villageRoot.Find("Terrain"));
+            MarkBranchStatic(villageRoot.Find("Environment"));
+            // Explicitly keep Gameplay dynamic (grid + placeable buildings + troops).
+            var gameplay = villageRoot.Find("Gameplay");
+            if (gameplay != null)
+            {
+                foreach (var t in gameplay.GetComponentsInChildren<Transform>(true))
+                    t.gameObject.isStatic = false;
+            }
+        }
+
+        static void MarkBranchStatic(Transform branch)
+        {
+            if (branch == null) return;
+            foreach (var t in branch.GetComponentsInChildren<Transform>(true))
+            {
+                var n = t.name;
+                // Placement grid must stay dynamic if ever under Terrain (legacy layouts).
+                if (n == "BuildingGrid" || n == "SnapSurface")
+                {
+                    t.gameObject.isStatic = false;
+                    continue;
+                }
+                t.gameObject.isStatic = true;
             }
         }
 
@@ -93,10 +129,27 @@ namespace KoG.MiniMvp.Lighting
             }
 
             var ok = enabled <= SoftRendererBudget;
-            Debug.Log("[MiniMvp] Draw budget — renderers=" + enabled +
-                      " materialSlots=" + mats +
-                      " target<=" + SoftRendererBudget +
-                      " " + (ok ? "OK" : "HIGH"));
+            if (!ok)
+            {
+                // Soft-GO hard policy: strip remaining mesh shadows under Environment/Nature.
+                var nature = villageRoot.Find("Environment/Nature");
+                if (nature != null)
+                {
+                    foreach (var r in nature.GetComponentsInChildren<Renderer>(true))
+                    {
+                        if (r == null) continue;
+                        r.shadowCastingMode = ShadowCastingMode.Off;
+                    }
+                }
+                Debug.LogWarning("[MiniMvp] Draw budget HIGH — nature mesh shadows forced Off. renderers=" +
+                                 enabled + " target<=" + SoftRendererBudget);
+            }
+            else
+            {
+                Debug.Log("[MiniMvp] Draw budget — renderers=" + enabled +
+                          " materialSlots=" + mats +
+                          " target<=" + SoftRendererBudget + " OK");
+            }
         }
     }
 }

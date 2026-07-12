@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.Controls;
 
@@ -25,7 +26,7 @@ namespace KoG.MiniMvp.Camera
         const float MinOrtho = 8f;
         const float MaxOrtho = 18f;
         const float DefaultOrtho = 12f;
-        const float UiBottomGuardPx = 190f;
+        const float UiBottomGuardPx = 210f;
         const float SoftClampStrength = 8f;
         const float EdgeRubber = 2.8f;
         const float FocusLerp = 7.5f;
@@ -46,16 +47,24 @@ namespace KoG.MiniMvp.Camera
         int _activeFinger = -1;
         float _lastPinchDist = -1f;
 
+        float _punchOrtho;
+        float _punchTime;
+        float _punchDuration;
+        float _punchAmount;
+        Vector3 _punchOffset;
+        float _orthoSize = DefaultOrtho;
+
         public Vector3 Focus => _focus;
         public bool IsConfigured => _configured;
 
         public float OrthoSize
         {
-            get => _cam != null ? _cam.orthographicSize : DefaultOrtho;
+            get => _orthoSize;
             set
             {
-                if (_cam == null) return;
-                _cam.orthographicSize = Mathf.Clamp(value, MinOrtho, MaxOrtho);
+                _orthoSize = Mathf.Clamp(value, MinOrtho, MaxOrtho);
+                if (_cam != null && _punchDuration <= 0f)
+                    _cam.orthographicSize = _orthoSize;
             }
         }
 
@@ -122,6 +131,16 @@ namespace KoG.MiniMvp.Camera
             if (orthoSize.HasValue) OrthoSize = orthoSize.Value;
         }
 
+        /// <summary>Short ortho kick + lateral nudge for raid juice (presentation only).</summary>
+        public void Punch(float orthoKick = 0.85f, float duration = 0.28f)
+        {
+            _punchAmount = Mathf.Clamp(orthoKick, 0.15f, 2.2f);
+            _punchDuration = Mathf.Max(0.08f, duration);
+            _punchTime = 0f;
+            var yaw = PoseRotation() * Vector3.right;
+            _punchOffset = yaw * (_punchAmount * 0.18f);
+        }
+
         void LateUpdate()
         {
             if (_cam == null) return;
@@ -130,7 +149,37 @@ namespace KoG.MiniMvp.Camera
             ApplyMomentum();
             ApplySmoothFocus();
             SoftClampFocus(hard: false);
+            TickPunch();
             ApplyTransform();
+        }
+
+        void TickPunch()
+        {
+            if (_punchDuration <= 0f)
+            {
+                _punchOrtho = 0f;
+                _punchOffset = Vector3.zero;
+                return;
+            }
+
+            _punchTime += Time.deltaTime;
+            var t = Mathf.Clamp01(_punchTime / _punchDuration);
+            // Fast in, ease out.
+            var envelope = 1f - t;
+            envelope *= envelope;
+            var kick = Mathf.Sin(t * Mathf.PI) * envelope;
+            _punchOrtho = _punchAmount * kick;
+            if (t >= 1f)
+            {
+                _punchDuration = 0f;
+                _punchOrtho = 0f;
+                _punchOffset = Vector3.zero;
+            }
+            else
+            {
+                var yaw = PoseRotation() * Vector3.right;
+                _punchOffset = yaw * (_punchAmount * 0.22f * kick);
+            }
         }
 
         void BindCamera()
@@ -168,7 +217,7 @@ namespace KoG.MiniMvp.Camera
             if (_cam.orthographicSize < MinOrtho || _cam.orthographicSize > MaxOrtho)
                 OrthoSize = DefaultOrtho;
             else
-                OrthoSize = _cam.orthographicSize;
+                _orthoSize = Mathf.Clamp(_cam.orthographicSize, MinOrtho, MaxOrtho);
             if (movePosition)
                 ApplyTransform();
         }
@@ -177,8 +226,10 @@ namespace KoG.MiniMvp.Camera
         {
             if (_cam == null) return;
             var rot = PoseRotation();
+            var focus = _focus + _punchOffset;
             // World-space pose — camera must stay a root (or under identity parent).
-            _cam.transform.SetPositionAndRotation(PosePosition(_focus), rot);
+            _cam.transform.SetPositionAndRotation(PosePosition(focus), rot);
+            _cam.orthographicSize = Mathf.Clamp(_orthoSize + _punchOrtho, MinOrtho, MaxOrtho + 1.5f);
         }
 
         void SoftClampFocus(bool hard)
@@ -393,6 +444,17 @@ namespace KoG.MiniMvp.Camera
             _velocity = Vector3.Lerp(_velocity, Vector3.zero, MomentumDamping * Time.deltaTime);
         }
 
-        static bool IsOverUi(Vector2 screenPos) => screenPos.y < UiBottomGuardPx;
+        static bool IsOverUi(Vector2 screenPos)
+        {
+            if (screenPos.y < UiBottomGuardPx) return true;
+            var es = EventSystem.current;
+            if (es == null) return false;
+            if (Touchscreen.current != null && Touchscreen.current.primaryTouch.press.isPressed)
+            {
+                var id = Touchscreen.current.primaryTouch.touchId.ReadValue();
+                if (es.IsPointerOverGameObject(id)) return true;
+            }
+            return es.IsPointerOverGameObject();
+        }
     }
 }

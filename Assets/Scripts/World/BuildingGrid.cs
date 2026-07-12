@@ -51,8 +51,13 @@ namespace KoG.MiniMvp.World
             var rend = plane.GetComponent<Renderer>();
             if (rend != null) rend.enabled = false;
 
-            var col = plane.GetComponent<Collider>();
-            if (col != null) col.isTrigger = true;
+            // Quad ships with a non-convex MeshCollider — Unity forbids triggers on those.
+            var meshCol = plane.GetComponent<MeshCollider>();
+            if (meshCol != null) Object.Destroy(meshCol);
+            var box = plane.GetComponent<BoxCollider>();
+            if (box == null) box = plane.AddComponent<BoxCollider>();
+            box.isTrigger = true;
+            box.size = new Vector3(1f, 1f, 0.02f);
         }
 
         public Vector3 GridToWorld(int x, int z)

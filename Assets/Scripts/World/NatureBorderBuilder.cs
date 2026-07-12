@@ -76,6 +76,7 @@ namespace KoG.MiniMvp.World
             or.sharedMaterial = _outerGrass;
             or.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             or.receiveShadows = true;
+            MarkStaticHierarchy(outer);
 
             var mid = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
             mid.name = "ForestFloor";
@@ -88,6 +89,7 @@ namespace KoG.MiniMvp.World
             mr.sharedMaterial = _midGrass;
             mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             mr.receiveShadows = true;
+            MarkStaticHierarchy(mid);
         }
 
         static void BuildTreeRing(Transform fieldRoot, float fieldWorldSize)
@@ -169,6 +171,7 @@ namespace KoG.MiniMvp.World
 
             Debug.Log("[MiniMvp] Nature border — " + border.transform.childCount +
                       " props (fbx=" + useFbx + ") + outer world fill");
+            MarkStaticHierarchy(border);
         }
 
         static GameObject Pick(GameObject[] arr, int seed)
@@ -199,6 +202,18 @@ namespace KoG.MiniMvp.World
             StripColliders(go);
             UrpMaterialUtil.RemapToUrp(go);
             StylizeNatureColors(go);
+            // Blob shadow already drawn — only trunk casts real shadows (cheap).
+            foreach (var r in go.GetComponentsInChildren<Renderer>(true))
+            {
+                if (r == null) continue;
+                var n = r.name != null ? r.name.ToLowerInvariant() : "";
+                var isTrunk = n.Contains("trunk") || n.Contains("bark") || n.Contains("wood") ||
+                              n.Contains("stem") || n.Contains("log");
+                r.shadowCastingMode = isTrunk
+                    ? UnityEngine.Rendering.ShadowCastingMode.On
+                    : UnityEngine.Rendering.ShadowCastingMode.Off;
+                r.receiveShadows = false;
+            }
         }
 
         static void NormalizeHeight(GameObject go, float targetHeight)
@@ -247,54 +262,87 @@ namespace KoG.MiniMvp.World
                 Object.Destroy(c);
         }
 
+        /// <summary>
+        /// Shared stylized mats keyed by source instance — never use Renderer.materials
+        /// (that clones every slot and leaks Material instances).
+        /// </summary>
+        static readonly Dictionary<int, Material> StylizedBySourceId = new Dictionary<int, Material>(64);
+
         /// <summary>Boost albedo toward bright M&amp;G / CoC cartoon greens.</summary>
         static void StylizeNatureColors(GameObject go)
         {
             foreach (var r in go.GetComponentsInChildren<Renderer>(true))
             {
-                var mats = r.materials;
-                for (var i = 0; i < mats.Length; i++)
+                var shared = r.sharedMaterials;
+                if (shared == null || shared.Length == 0) continue;
+                var nextSlots = shared;
+                var replaced = false;
+                for (var i = 0; i < shared.Length; i++)
                 {
-                    var m = mats[i];
-                    if (m == null) continue;
-                    var c = Color.white;
-                    if (m.HasProperty("_BaseColor")) c = m.GetColor("_BaseColor");
-                    else if (m.HasProperty("_Color")) c = m.GetColor("_Color");
-
-                    var name = (m.name ?? string.Empty).ToLowerInvariant();
-                    Color next;
-                    if (name.Contains("bark") || name.Contains("wood") || name.Contains("trunk") ||
-                        (c.r > c.g * 0.85f && c.g < 0.45f && c.b < 0.4f))
+                    var src = shared[i];
+                    if (src == null) continue;
+                    var stylized = GetOrCreateStylized(src);
+                    if (stylized == src) continue;
+                    if (!replaced)
                     {
-                        next = Color.Lerp(c, new Color(0.45f, 0.28f, 0.14f), 0.55f);
+                        nextSlots = new Material[shared.Length];
+                        for (var j = 0; j < shared.Length; j++)
+                            nextSlots[j] = shared[j];
+                        replaced = true;
                     }
-                    else if (name.Contains("rock") || name.Contains("stone") ||
-                             (c.r > 0.4f && Mathf.Abs(c.r - c.g) < 0.08f && Mathf.Abs(c.g - c.b) < 0.08f && c.g < 0.65f))
-                    {
-                        next = Color.Lerp(c, new Color(0.58f, 0.56f, 0.52f), 0.4f);
-                    }
-                    else if (name.Contains("flower") || name.Contains("berry") || c.r > c.g + 0.15f)
-                    {
-                        next = Color.Lerp(c, new Color(0.92f, 0.35f, 0.45f), 0.35f);
-                    }
-                    else
-                    {
-                        // Bright fantasy canopy — Clash-smooth, M&G saturated green.
-                        var bright = new Color(0.32f, 0.72f, 0.28f);
-                        next = Color.Lerp(c, bright, 0.5f);
-                        next = new Color(
-                            Mathf.Clamp01(next.r * 0.95f),
-                            Mathf.Clamp01(next.g * 1.15f),
-                            Mathf.Clamp01(next.b * 0.9f),
-                            1f);
-                    }
-
-                    if (m.HasProperty("_BaseColor")) m.SetColor("_BaseColor", next);
-                    if (m.HasProperty("_Color")) m.SetColor("_Color", next);
-                    if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", 0.12f);
+                    nextSlots[i] = stylized;
                 }
-                r.materials = mats;
+
+                if (replaced)
+                    r.sharedMaterials = nextSlots;
             }
+        }
+
+        static Material GetOrCreateStylized(Material src)
+        {
+            var id = src.GetInstanceID();
+            if (StylizedBySourceId.TryGetValue(id, out var cached) && cached != null)
+                return cached;
+
+            var m = new Material(src);
+            m.name = src.name + "_Stylized";
+            var c = Color.white;
+            if (m.HasProperty("_BaseColor")) c = m.GetColor("_BaseColor");
+            else if (m.HasProperty("_Color")) c = m.GetColor("_Color");
+
+            var name = (m.name ?? string.Empty).ToLowerInvariant();
+            Color next;
+            if (name.Contains("bark") || name.Contains("wood") || name.Contains("trunk") ||
+                (c.r > c.g * 0.85f && c.g < 0.45f && c.b < 0.4f))
+            {
+                next = Color.Lerp(c, new Color(0.45f, 0.28f, 0.14f), 0.55f);
+            }
+            else if (name.Contains("rock") || name.Contains("stone") ||
+                     (c.r > 0.4f && Mathf.Abs(c.r - c.g) < 0.08f && Mathf.Abs(c.g - c.b) < 0.08f && c.g < 0.65f))
+            {
+                next = Color.Lerp(c, new Color(0.58f, 0.56f, 0.52f), 0.4f);
+            }
+            else if (name.Contains("flower") || name.Contains("berry") || c.r > c.g + 0.15f)
+            {
+                next = Color.Lerp(c, new Color(0.92f, 0.35f, 0.45f), 0.35f);
+            }
+            else
+            {
+                var bright = new Color(0.32f, 0.72f, 0.28f);
+                next = Color.Lerp(c, bright, 0.5f);
+                next = new Color(
+                    Mathf.Clamp01(next.r * 0.95f),
+                    Mathf.Clamp01(next.g * 1.15f),
+                    Mathf.Clamp01(next.b * 0.9f),
+                    1f);
+            }
+
+            if (m.HasProperty("_BaseColor")) m.SetColor("_BaseColor", next);
+            if (m.HasProperty("_Color")) m.SetColor("_Color", next);
+            if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", 0.12f);
+
+            StylizedBySourceId[id] = m;
+            return m;
         }
 
         static void EnsurePrefabs()
@@ -426,7 +474,16 @@ namespace KoG.MiniMvp.World
                 ? UnityEngine.Rendering.ShadowCastingMode.On
                 : UnityEngine.Rendering.ShadowCastingMode.Off;
             r.receiveShadows = true;
+            go.isStatic = true;
             return go;
+        }
+
+        static void MarkStaticHierarchy(GameObject go)
+        {
+            if (go == null) return;
+            go.isStatic = true;
+            foreach (var t in go.GetComponentsInChildren<Transform>(true))
+                t.gameObject.isStatic = true;
         }
     }
 }

@@ -17,6 +17,14 @@ namespace KoG.MiniMvp.World
             _instance.SpawnPuff(worldPos + Vector3.up * 0.2f);
         }
 
+        /// <summary>Short bounce drop when a building lands after place confirm.</summary>
+        public static void PlaceDrop(Transform building)
+        {
+            if (building == null) return;
+            Ensure();
+            _instance.StartCoroutine(_instance.AnimateDrop(building));
+        }
+
         public static void FloatLabel(Vector3 worldPos, string text, Color color)
         {
             Ensure();
@@ -42,9 +50,9 @@ namespace KoG.MiniMvp.World
             var rend = go.GetComponent<Renderer>();
             if (_puffMat == null)
             {
-                var shader = UrpMaterialUtil.FindUnlitShader();
+                var shader = Shader.Find("Universal Render Pipeline/Unlit");
                 if (shader == null) shader = Shader.Find("Unlit/Color");
-                _puffMat = new Material(shader != null ? shader : UrpMaterialUtil.FindLitShader());
+                _puffMat = new Material(shader != null ? shader : Shader.Find("Universal Render Pipeline/Lit"));
                 var c = new Color(0.95f, 0.9f, 0.55f, 1f);
                 if (_puffMat.HasProperty("_BaseColor")) _puffMat.SetColor("_BaseColor", c);
                 if (_puffMat.HasProperty("_Color")) _puffMat.SetColor("_Color", c);
@@ -72,6 +80,27 @@ namespace KoG.MiniMvp.World
                 // TextMesh uses its own material; keep default.
             }
             StartCoroutine(AnimateFloat(go.transform, tm));
+        }
+
+        System.Collections.IEnumerator AnimateDrop(Transform building)
+        {
+            if (building == null) yield break;
+            var start = building.localScale;
+            if (start.sqrMagnitude < 0.0001f) start = Vector3.one;
+            var t0 = 0f;
+            const float life = 0.28f;
+            while (t0 < life && building != null)
+            {
+                t0 += Time.deltaTime;
+                var k = Mathf.Clamp01(t0 / life);
+                var squash = 1f + Mathf.Sin(k * Mathf.PI) * 0.18f;
+                var stretch = 1f - Mathf.Sin(k * Mathf.PI) * 0.12f;
+                building.localScale = new Vector3(start.x * squash, start.y * stretch, start.z * squash);
+                yield return null;
+            }
+
+            if (building != null) building.localScale = start;
+            PlaceBurst(building != null ? building.position : Vector3.zero);
         }
 
         System.Collections.IEnumerator AnimatePuff(Transform t)
