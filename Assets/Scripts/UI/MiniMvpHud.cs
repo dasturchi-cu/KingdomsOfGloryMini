@@ -34,12 +34,14 @@ namespace KoG.MiniMvp.UI
         GameObject _errorBanner;
         GameObject _socialSheet;
         GameObject _achievementsSheet;
+        GameObject _unlockSheet;
         GameObject _clanSheet;
         GameObject _chatSheet;
         GameObject _pvpSheet;
         GameObject _tournamentSheet;
         Text[] _achievementProgressLabels;
         Button[] _achievementClaimButtons;
+        Text _unlockBodyLabel;
         Text _clanRosterLabel;
         Text _chatHistoryLabel;
         Text _pvpResultLabel;
@@ -49,6 +51,9 @@ namespace KoG.MiniMvp.UI
         Text _resultStars;
         Text _resultLoot;
         Text _muteLabel;
+        Text _trainLabel;
+        Text _troopToggleLabel;
+        Button _troopToggleBtn;
         InputField _userField;
         InputField _displayField;
         InputField _emailField;
@@ -83,6 +88,8 @@ namespace KoG.MiniMvp.UI
         public Action OnManualSave;
         public Action OnRetryLoad;
         public Action OnOpenAchievements;
+        public Action OnOpenUnlocks;
+        public Action OnToggleTroopType;
         public Action<string> OnClaimAchievement;
         public Action OnOpenClan;
         public Action OnClanCreate;
@@ -130,6 +137,7 @@ namespace KoG.MiniMvp.UI
             ClearError();
             ShowSocialSheet(false);
             ShowAchievementsSheet(false);
+            ShowUnlockSheet(false);
             ShowClanSheet(false);
             ShowChatSheet(false);
             ShowPvpSheet(false);
@@ -330,6 +338,7 @@ namespace KoG.MiniMvp.UI
             if (visible)
             {
                 if (_socialSheet != null) _socialSheet.SetActive(false);
+                ShowUnlockSheet(false);
                 ShowClanSheet(false);
                 ShowChatSheet(false);
                 ShowPvpSheet(false);
@@ -338,12 +347,43 @@ namespace KoG.MiniMvp.UI
             if (_achievementsSheet != null) _achievementsSheet.SetActive(visible);
         }
 
+        public void ShowUnlockSheet(bool visible)
+        {
+            if (visible)
+            {
+                if (_socialSheet != null) _socialSheet.SetActive(false);
+                ShowAchievementsSheet(false);
+                ShowClanSheet(false);
+                ShowChatSheet(false);
+                ShowPvpSheet(false);
+                ShowTournamentSheet(false);
+            }
+            if (_unlockSheet != null) _unlockSheet.SetActive(visible);
+        }
+
+        public void SetUnlockBody(string text)
+        {
+            if (_unlockBodyLabel != null) _unlockBodyLabel.text = text ?? "";
+        }
+
+        /// <summary>Train button + optional L4 troop-type toggle (Askar / Archer).</summary>
+        public void SetTrainTroopUi(string troopType, bool archerUnlocked)
+        {
+            var isArcher = string.Equals(troopType, "archer", StringComparison.Ordinal);
+            var label = isArcher ? "Archer ×10" : "Askar ×10";
+            if (_trainLabel != null) _trainLabel.text = label;
+            if (_troopToggleBtn != null) _troopToggleBtn.gameObject.SetActive(archerUnlocked);
+            if (_troopToggleLabel != null)
+                _troopToggleLabel.text = isArcher ? "Archer" : "Askar";
+        }
+
         public void ShowClanSheet(bool visible)
         {
             if (visible)
             {
                 if (_socialSheet != null) _socialSheet.SetActive(false);
                 ShowAchievementsSheet(false);
+                ShowUnlockSheet(false);
                 ShowChatSheet(false);
                 ShowPvpSheet(false);
                 ShowTournamentSheet(false);
@@ -357,6 +397,7 @@ namespace KoG.MiniMvp.UI
             {
                 if (_socialSheet != null) _socialSheet.SetActive(false);
                 ShowAchievementsSheet(false);
+                ShowUnlockSheet(false);
                 ShowClanSheet(false);
                 ShowPvpSheet(false);
                 ShowTournamentSheet(false);
@@ -370,6 +411,7 @@ namespace KoG.MiniMvp.UI
             {
                 if (_socialSheet != null) _socialSheet.SetActive(false);
                 ShowAchievementsSheet(false);
+                ShowUnlockSheet(false);
                 ShowClanSheet(false);
                 ShowChatSheet(false);
                 ShowTournamentSheet(false);
@@ -383,6 +425,7 @@ namespace KoG.MiniMvp.UI
             {
                 if (_socialSheet != null) _socialSheet.SetActive(false);
                 ShowAchievementsSheet(false);
+                ShowUnlockSheet(false);
                 ShowClanSheet(false);
                 ShowChatSheet(false);
                 ShowPvpSheet(false);
@@ -536,6 +579,7 @@ namespace KoG.MiniMvp.UI
             BuildGameBar(root);
             BuildSocialSheet(root);
             BuildAchievementsSheet(root);
+            BuildUnlockSheet(root);
             BuildClanSheet(root);
             BuildChatSheet(root);
             BuildPvpSheet(root);
@@ -661,8 +705,14 @@ namespace KoG.MiniMvp.UI
                 new Color(0.20f, 0.36f, 0.58f), () => Safe(OnPlaceBarracks));
             MakeBtn(_loopActionBar.transform, "Collect", "Yig‘ish", ref x, row1Y + 8f, bw, gap, btnH,
                 new Color(0.58f, 0.46f, 0.10f), () => Safe(OnCollect));
-            MakeBtn(_loopActionBar.transform, "Train", "Askar ×10", ref x, row1Y + 8f, bw, gap, btnH,
+            var troopToggle = MakeBtn(_loopActionBar.transform, "TroopType", "Askar", ref x, row1Y + 8f, 110f, gap, btnH,
+                new Color(0.22f, 0.38f, 0.34f), () => Safe(OnToggleTroopType));
+            _troopToggleBtn = troopToggle;
+            _troopToggleLabel = troopToggle != null ? troopToggle.GetComponentInChildren<Text>() : null;
+            if (_troopToggleBtn != null) _troopToggleBtn.gameObject.SetActive(false);
+            var trainBtn = MakeBtn(_loopActionBar.transform, "Train", "Askar ×10", ref x, row1Y + 8f, bw, gap, btnH,
                 new Color(0.26f, 0.46f, 0.28f), () => Safe(OnTrain));
+            _trainLabel = trainBtn != null ? trainBtn.GetComponentInChildren<Text>() : null;
             MakeBtn(_loopActionBar.transform, "Upgrade", "Yangila", ref x, row1Y + 8f, bw, gap, btnH,
                 new Color(0.40f, 0.28f, 0.52f), () => Safe(OnUpgrade));
 
@@ -745,16 +795,53 @@ namespace KoG.MiniMvp.UI
                 new Color(0.18f, 0.42f, 0.36f), () => { ShowSocialSheet(false); Safe(OnManualSave); });
 
             x = -320f;
-            MakeBtn(sheet, "Achievements", "Yutuqlar", ref x, -60f, bw, gap, btnH,
+            MakeBtn(sheet, "Achievements", "Yutuqlar", ref x, -60f, 150f, gap, btnH,
                 new Color(0.42f, 0.28f, 0.14f), () =>
                 {
                     ShowSocialSheet(false);
                     Safe(OnOpenAchievements);
                 });
-            MakeBtn(sheet, "CloseSocial", "Yopish", ref x, -60f, bw, gap, btnH,
+            MakeBtn(sheet, "Unlocks", "Qal’a", ref x, -60f, 150f, gap, btnH,
+                new Color(0.36f, 0.28f, 0.48f), () =>
+                {
+                    ShowSocialSheet(false);
+                    Safe(OnOpenUnlocks);
+                });
+            MakeBtn(sheet, "CloseSocial", "Yopish", ref x, -60f, 150f, gap, btnH,
                 new Color(0.22f, 0.24f, 0.28f), () => ShowSocialSheet(false));
 
             _socialSheet.SetActive(false);
+        }
+
+        void BuildUnlockSheet(Transform root)
+        {
+            var dim = Panel(root, "UnlockDim",
+                new Vector2(0f, 0f), new Vector2(1f, 1f),
+                Vector2.zero, Vector2.zero,
+                new Color(0.02f, 0.03f, 0.05f, 0.55f));
+            dim.offsetMin = Vector2.zero;
+            dim.offsetMax = Vector2.zero;
+            _unlockSheet = dim.gameObject;
+            var dimBtn = _unlockSheet.AddComponent<Button>();
+            dimBtn.transition = Selectable.Transition.None;
+            dimBtn.onClick.AddListener(() => ShowUnlockSheet(false));
+
+            var sheet = Panel(dim, "UnlockSheet",
+                new Vector2(0.5f, 0f), new Vector2(0.5f, 0f),
+                new Vector2(0f, 220f), new Vector2(720f, 480f),
+                new Color(0.06f, 0.08f, 0.12f, 0.98f));
+
+            Label(sheet, "UnlockTitle", "Qal’a ochilishlari", 24, TextAnchor.UpperLeft,
+                new Vector2(28f, -20f), new Vector2(500f, 32f), new Color(1f, 0.9f, 0.55f));
+            _unlockBodyLabel = Label(sheet, "UnlockBody",
+                "L1 Kon · L2 Kazarma/Askar · L3 Lager2 · L4 Archer/Lager3",
+                16, TextAnchor.UpperLeft,
+                new Vector2(28f, -70f), new Vector2(660f, 300f), new Color(0.88f, 0.90f, 0.94f));
+
+            var closeX = -100f;
+            MakeBtn(sheet, "CloseUnlock", "Yopish", ref closeX, -160f, 280f, 0f, 52f,
+                new Color(0.22f, 0.24f, 0.28f), () => ShowUnlockSheet(false));
+            _unlockSheet.SetActive(false);
         }
 
         void BuildAchievementsSheet(Transform root)

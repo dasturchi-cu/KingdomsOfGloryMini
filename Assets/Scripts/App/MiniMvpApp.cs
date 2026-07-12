@@ -62,6 +62,10 @@ namespace KoG.MiniMvp.App
         int _raidDeployCount;
         CampaignDto[] _campaigns;
         string[] _placeableUnlocks = { "gold_mine" };
+        string[] _trainableTroops = System.Array.Empty<string>();
+        string[] _unlockLabels = System.Array.Empty<string>();
+        string _trainTroopType = "barbarian";
+        int _archerCount;
         float _raidStartedAt = -999f;
         bool _raidActive;
         Coroutine _raidCountdownCo;
@@ -216,6 +220,7 @@ namespace KoG.MiniMvp.App
             _hud.OnRotatePlace = () => _buildings?.RotatePlacement();
             _hud.OnCollect = () => StartCoroutine(CollectGold());
             _hud.OnTrain = () => StartCoroutine(TrainTroops(10));
+            _hud.OnToggleTroopType = ToggleTrainTroopType;
             _hud.OnUpgrade = () => StartCoroutine(UpgradeSelected());
             _hud.OnDestroyBuilding = () =>
             {
@@ -357,6 +362,12 @@ namespace KoG.MiniMvp.App
                     _hud.SetAchievements(_achievements);
                     _hud.ShowAchievementsSheet(true);
                 }
+            };
+            _hud.OnOpenUnlocks = () =>
+            {
+                if (_hud == null) return;
+                _hud.SetUnlockBody(BuildUnlockSheetText());
+                _hud.ShowUnlockSheet(true);
             };
             _hud.OnClaimAchievement = id => StartCoroutine(ClaimAchievement(id));
             _hud.OnRetryLoad = () =>
@@ -570,8 +581,9 @@ namespace KoG.MiniMvp.App
             if (_hud == null) return;
             _hud.SetBusy(_busy);
             _hud.SetStatus(_status);
-            _hud.SetResources(_gold, _mana, _diamond, _barbarianCount, _housingUsed, _housingMax);
+            _hud.SetResources(_gold, _mana, _diamond, _barbarianCount + _archerCount, _housingUsed, _housingMax);
             _hud.SetAchievements(_achievements);
+            _hud.SetTrainTroopUi(_trainTroopType, CanTrainTroop("archer"));
             if (_screen == UiScreen.Result)
                 _hud.SetResultMessage(_resultMessage);
 
@@ -844,21 +856,30 @@ namespace KoG.MiniMvp.App
                 {
                     if (state.unlocks.placeable != null && state.unlocks.placeable.Length > 0)
                         _placeableUnlocks = state.unlocks.placeable;
+                    _trainableTroops = state.unlocks.troops ?? System.Array.Empty<string>();
+                    _unlockLabels = state.unlocks.labels ?? System.Array.Empty<string>();
                     _campaignMax = Math.Max(1, state.unlocks.campaignMax);
+                    if (!CanTrainTroop(_trainTroopType))
+                        _trainTroopType = CanTrainTroop("barbarian") ? "barbarian" : "barbarian";
                 }
                 else
                 {
                     _campaignMax = _castleLevel >= 4 ? 3 : (_castleLevel >= 3 ? 2 : 1);
+                    _trainableTroops = _castleLevel >= 4
+                        ? new[] { "barbarian", "archer" }
+                        : (_castleLevel >= 2 ? new[] { "barbarian" } : System.Array.Empty<string>());
                 }
 
                 _campaigns = state.campaigns;
 
                 _barbarianCount = 0;
+                _archerCount = 0;
                 if (state.troops != null)
                 {
                     foreach (var troop in state.troops)
                     {
                         if (troop.type == "barbarian") _barbarianCount = troop.quantity;
+                        else if (troop.type == "archer") _archerCount = troop.quantity;
                     }
                 }
 
@@ -1148,13 +1169,20 @@ namespace KoG.MiniMvp.App
             yield return LoadPlayerState();
             if (_castleLevel > prevCastle)
             {
-                var labels = _castleLevel == 2 ? "Kazarma + Askar"
-                    : _castleLevel == 3 ? "Lager 2"
-                    : _castleLevel == 4 ? "Archer + Lager 3"
-                    : ("L" + _castleLevel);
+                var labels = _unlockLabels != null && _unlockLabels.Length > 0
+                    ? string.Join(" + ", _unlockLabels)
+                    : (_castleLevel == 2 ? "Kazarma + Askar"
+                        : _castleLevel == 3 ? "Lager 2"
+                        : _castleLevel == 4 ? "Archer + Lager 3"
+                        : ("L" + _castleLevel));
                 SetStatus("Qal’a L" + _castleLevel + " — yangi: " + labels);
                 WorldFeedback.FloatLabel(FieldCenter + Vector3.up * 2f,
                     "Castle L" + _castleLevel, new Color(1f, 0.92f, 0.4f));
+                if (_hud != null)
+                {
+                    _hud.SetUnlockBody(BuildUnlockSheetText());
+                    _hud.ShowUnlockSheet(true);
+                }
             }
         }
 
@@ -1254,18 +1282,21 @@ namespace KoG.MiniMvp.App
 
         IEnumerator TrainTroops(int quantity)
         {
-            if (_castleLevel < 2)
+            if (!CanTrainTroop(_trainTroopType))
             {
-                SetStatus("Askar uchun Qal’a L2 + Kazarma kerak");
+                SetStatus(_trainTroopType == "archer"
+                    ? "Archer uchun Qal’a L4 kerak"
+                    : "Askar uchun Qal’a L2 + Kazarma kerak");
                 MiniAudio.PlayError();
                 yield break;
             }
 
+            var troopLabel = _trainTroopType == "archer" ? "Archer" : "Askar";
             SetBusy(true);
-            SetStatus("Askar navbatga… (◆ mana)");
+            SetStatus(troopLabel + " navbatga… (◆ mana)");
             var body = JsonObject(
                 ("playerId", SessionStore.PlayerId),
-                ("troopType", "barbarian"),
+                ("troopType", _trainTroopType),
                 ("quantity", quantity.ToString())
             );
 
@@ -1283,7 +1314,7 @@ namespace KoG.MiniMvp.App
                         err.IndexOf("housing", StringComparison.OrdinalIgnoreCase) >= 0)
                         SetStatus("Lager to‘la — " + err);
                     else
-                        SetStatus("Askar xato: " + err + " (Kazarma + mana + L2)");
+                        SetStatus(troopLabel + " xato: " + err);
                     return;
                 }
 
@@ -1303,13 +1334,16 @@ namespace KoG.MiniMvp.App
 
             if (res.training && res.trainSeconds > 0)
             {
-                SetStatus("Askar tayyorlanmoqda… " + res.trainSeconds + "s (×" + res.pendingQuantity + ")");
+                SetStatus(troopLabel + " tayyorlanmoqda… " + res.trainSeconds + "s (×" + res.pendingQuantity + ")");
                 if (_trainWaitCo != null) StopCoroutine(_trainWaitCo);
                 _trainWaitCo = StartCoroutine(WaitTrainingThenReload(res.trainSeconds));
                 yield break;
             }
 
-            _barbarianCount += res.trainedQuantity;
+            if (_trainTroopType == "archer")
+                _archerCount += res.trainedQuantity;
+            else
+                _barbarianCount += res.trainedQuantity;
             Vector3 floatPos = FieldCenter + Vector3.up;
             foreach (var v in _buildingViews.Values)
             {
@@ -1322,10 +1356,71 @@ namespace KoG.MiniMvp.App
             }
             WorldFeedback.FloatLabel(floatPos, "+" + res.trainedQuantity + " ⚔", new Color(0.7f, 0.9f, 1f));
             MiniAudio.PlayTrainDone();
-            SetStatus("Askar +" + res.trainedQuantity + " · jami " + _barbarianCount);
+            SetStatus(troopLabel + " +" + res.trainedQuantity);
             SyncTroopVisuals();
             RefreshHud();
             yield return LoadPlayerState();
+        }
+
+        void ToggleTrainTroopType()
+        {
+            if (!CanTrainTroop("archer"))
+            {
+                _trainTroopType = "barbarian";
+                RefreshHud();
+                return;
+            }
+
+            _trainTroopType = _trainTroopType == "archer" ? "barbarian" : "archer";
+            RefreshHud();
+            SetStatus(_trainTroopType == "archer"
+                ? "Train: Archer (L4 ochiq)"
+                : "Train: Askar");
+        }
+
+        bool CanTrainTroop(string troopType)
+        {
+            if (string.IsNullOrEmpty(troopType)) return false;
+            if (_trainableTroops != null)
+            {
+                for (var i = 0; i < _trainableTroops.Length; i++)
+                {
+                    if (_trainableTroops[i] == troopType) return true;
+                }
+            }
+
+            if (troopType == "barbarian") return _castleLevel >= 2;
+            if (troopType == "archer") return _castleLevel >= 4;
+            return false;
+        }
+
+        string BuildUnlockSheetText()
+        {
+            var sb = new System.Text.StringBuilder(256);
+            sb.Append("Hozir: Qal’a L").Append(_castleLevel).Append('\n');
+            sb.Append("Kamp: ").Append(_campaignMax).Append("/3\n");
+            if (_unlockLabels != null && _unlockLabels.Length > 0)
+                sb.Append("Ochilgan: ").Append(string.Join(", ", _unlockLabels)).Append('\n');
+            sb.Append('\n');
+            sb.Append(MarkUnlock(1)).Append(" L1 — Kon\n");
+            sb.Append(MarkUnlock(2)).Append(" L2 — Kazarma + Askar (+500●)\n");
+            sb.Append(MarkUnlock(3)).Append(" L3 — Lager 2 (+1000● +500◆)\n");
+            sb.Append(MarkUnlock(4)).Append(" L4 — Archer + Lager 3 (+50◇)\n");
+            if (_castleLevel < 4)
+                sb.Append("\nKeyingi: Qal’a L").Append(_castleLevel + 1);
+            else
+                sb.Append("\nArcher: Askar yonidagi tur tugmasi.");
+            return sb.ToString();
+        }
+
+        static string MarkUnlock(int level, int castleLevel)
+        {
+            return castleLevel >= level ? "✓" : "·";
+        }
+
+        string MarkUnlock(int level)
+        {
+            return MarkUnlock(level, _castleLevel);
         }
 
         int PickRaidFortress()
