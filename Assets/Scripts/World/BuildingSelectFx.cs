@@ -96,9 +96,12 @@ namespace KoG.MiniMvp.World
             var rend = go.GetComponent<Renderer>();
             if (_ringMat == null)
             {
-                var shader = Shader.Find("Universal Render Pipeline/Unlit");
-                if (shader == null) shader = Shader.Find("Unlit/Color");
-                if (shader == null) shader = Shader.Find("Universal Render Pipeline/Lit");
+                var shader = UrpMaterialUtil.FindUnlitShader() ?? UrpMaterialUtil.FindLitShader();
+                if (shader == null)
+                {
+                    Debug.LogWarning("[BuildingSelectFx] No shader — ring skipped");
+                    return;
+                }
                 _ringMat = new Material(shader);
                 var c = new Color(1f, 0.82f, 0.12f, 1f);
                 if (_ringMat.HasProperty("_BaseColor")) _ringMat.SetColor("_BaseColor", c);

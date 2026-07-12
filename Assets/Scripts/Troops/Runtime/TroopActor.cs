@@ -1,5 +1,6 @@
 using System;
 using KoG.MiniMvp.Combat;
+using KoG.MiniMvp.World;
 using UnityEngine;
 
 namespace KoG.MiniMvp.Troops
@@ -360,9 +361,9 @@ namespace KoG.MiniMvp.Troops
         static Material SharedSelectionRingMat()
         {
             if (_sharedSelectionRingMat != null) return _sharedSelectionRingMat;
-            var shader = Shader.Find("Universal Render Pipeline/Unlit");
-            if (shader == null) shader = Shader.Find("Unlit/Color");
-            _sharedSelectionRingMat = new Material(shader != null ? shader : Shader.Find("Standard"));
+            var shader = UrpMaterialUtil.FindUnlitShader() ?? UrpMaterialUtil.FindLitShader();
+            if (shader == null) return null;
+            _sharedSelectionRingMat = new Material(shader);
             var c = new Color(0.2f, 0.95f, 0.35f, 0.55f);
             if (_sharedSelectionRingMat.HasProperty("_BaseColor"))
                 _sharedSelectionRingMat.SetColor("_BaseColor", c);

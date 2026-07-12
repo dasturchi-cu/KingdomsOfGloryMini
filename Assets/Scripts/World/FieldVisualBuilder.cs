@@ -128,6 +128,7 @@ namespace KoG.MiniMvp.World
             BaseDensityDeco.Build(decorations.transform, fieldCenter, fieldWorldSize);
             // P2-walls: thin perimeter framing the playable field.
             BaseWallsDeco.Build(decorations.transform, fieldCenter, fieldWorldSize);
+            BuildHorizonFill(terrain.transform, fieldCenter, fieldWorldSize);
 
             BuildingGrid.Build(gameplay.transform, gridSize, cellSize, fieldCenter);
             // Camera/Sun parenting happens after MiniMvpApp creates them — see FinalizeHierarchy.
@@ -167,6 +168,31 @@ namespace KoG.MiniMvp.World
                 sun.transform.SetParent(lightNode, true);
         }
 
+        /// <summary>
+        /// Wide grass disk under the village — kills blue sky letterbox on landscape phones.
+        /// </summary>
+        static void BuildHorizonFill(Transform terrain, Vector3 fieldCenter, float fieldWorldSize)
+        {
+            var go = GameObject.CreatePrimitive(PrimitiveType.Quad);
+            go.name = "HorizonGrass";
+            go.transform.SetParent(terrain, false);
+            go.transform.position = new Vector3(fieldCenter.x, -0.02f, fieldCenter.z);
+            go.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
+            var span = Mathf.Max(fieldWorldSize * 4.5f, 90f);
+            go.transform.localScale = new Vector3(span, span, 1f);
+            Object.Destroy(go.GetComponent<Collider>());
+
+            var mat = UrpMaterialUtil.CreateColorMaterial(new Color(0.38f, 0.62f, 0.32f), "KoG_HorizonGrass");
+            var rend = go.GetComponent<Renderer>();
+            if (rend != null)
+            {
+                if (mat != null) rend.sharedMaterial = mat;
+                rend.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                rend.receiveShadows = false;
+            }
+            MarkStatic(go);
+        }
+
         static void BuildProceduralChecker(Transform parent, int gridSize, float fieldWorldSize)
         {
             var plane = GameObject.CreatePrimitive(PrimitiveType.Plane);
@@ -183,18 +209,13 @@ namespace KoG.MiniMvp.World
             if (_sharedFieldMat == null)
             {
                 _sharedCheckerTex = CreateCheckerTexture(gridSize, 8);
-                var shader = UrpMaterialUtil.FindLitShader();
-                if (shader == null) shader = Shader.Find("Standard");
-                _sharedFieldMat = new Material(shader);
+                _sharedFieldMat = UrpMaterialUtil.CreateColorMaterial(Color.white, "KoG_Field");
+                if (_sharedFieldMat == null) return;
                 _sharedFieldMat.mainTexture = _sharedCheckerTex;
                 if (_sharedFieldMat.HasProperty("_BaseMap"))
                     _sharedFieldMat.SetTexture("_BaseMap", _sharedCheckerTex);
                 if (_sharedFieldMat.HasProperty("_MainTex"))
                     _sharedFieldMat.SetTexture("_MainTex", _sharedCheckerTex);
-                if (_sharedFieldMat.HasProperty("_BaseColor"))
-                    _sharedFieldMat.SetColor("_BaseColor", Color.white);
-                if (_sharedFieldMat.HasProperty("_Color"))
-                    _sharedFieldMat.SetColor("_Color", Color.white);
                 _sharedFieldMat.enableInstancing = true;
             }
 

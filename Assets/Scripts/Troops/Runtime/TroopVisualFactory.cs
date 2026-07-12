@@ -59,10 +59,8 @@ namespace KoG.MiniMvp.Troops
 
             if (_sharedMat == null)
             {
-                var shader = UrpMaterialUtil.FindUnlitShader();
-                if (shader == null) shader = Shader.Find("Universal Render Pipeline/Lit");
-                if (shader == null) shader = Shader.Find("Standard");
-                _sharedMat = new Material(shader);
+                _sharedMat = UrpMaterialUtil.CreateColorMaterial(Color.white, "KoG_TroopShared");
+                if (_sharedMat == null) return null;
                 _sharedMat.enableInstancing = true;
             }
 

@@ -218,13 +218,8 @@ namespace KoG.MiniMvp.World
             if (Mats.TryGetValue(key, out var existing) && existing != null)
                 return existing;
 
-            var shader = UrpMaterialUtil.FindLitShader();
-            if (shader == null) shader = Shader.Find("Standard");
-
-            var mat = new Material(shader);
-            if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", color);
-            if (mat.HasProperty("_Color")) mat.SetColor("_Color", color);
-            UrpMaterialUtil.ApplyMobileSurface(mat);
+            var mat = UrpMaterialUtil.CreateColorMaterial(color, "KoG_" + key);
+            if (mat == null) return null;
             Mats[key] = mat;
             return mat;
         }

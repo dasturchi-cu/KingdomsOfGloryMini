@@ -50,9 +50,14 @@ namespace KoG.MiniMvp.World
             var rend = go.GetComponent<Renderer>();
             if (_puffMat == null)
             {
-                var shader = Shader.Find("Universal Render Pipeline/Unlit");
-                if (shader == null) shader = Shader.Find("Unlit/Color");
-                _puffMat = new Material(shader != null ? shader : Shader.Find("Universal Render Pipeline/Lit"));
+                var shader = UrpMaterialUtil.FindUnlitShader() ?? UrpMaterialUtil.FindLitShader();
+                if (shader == null)
+                {
+                    Debug.LogWarning("[WorldFeedback] No shader — puff skipped");
+                    Object.Destroy(go);
+                    return;
+                }
+                _puffMat = new Material(shader);
                 var c = new Color(0.95f, 0.9f, 0.55f, 1f);
                 if (_puffMat.HasProperty("_BaseColor")) _puffMat.SetColor("_BaseColor", c);
                 if (_puffMat.HasProperty("_Color")) _puffMat.SetColor("_Color", c);

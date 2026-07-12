@@ -25,8 +25,8 @@ namespace KoG.MiniMvp.Lighting
 
             RenderSettings.fog = true;
             RenderSettings.fogMode = FogMode.ExponentialSquared;
-            RenderSettings.fogColor = new Color(0.66f, 0.80f, 0.90f);
-            RenderSettings.fogDensity = 0.0045f;
+            RenderSettings.fogColor = new Color(0.55f, 0.74f, 0.48f);
+            RenderSettings.fogDensity = 0.0035f;
 
             var sun = EnsureSun();
             sun.transform.position = fieldCenter + new Vector3(-9f, 20f, -7f);
@@ -44,21 +44,21 @@ namespace KoG.MiniMvp.Lighting
             if (cam != null)
             {
                 cam.clearFlags = CameraClearFlags.SolidColor;
-                cam.backgroundColor = new Color(0.60f, 0.80f, 0.93f);
+                cam.backgroundColor = new Color(0.42f, 0.68f, 0.38f);
                 cam.allowHDR = false;
-                cam.allowMSAA = false;
+                cam.allowMSAA = true;
                 cam.farClipPlane = 180f;
                 cam.nearClipPlane = 0.3f;
             }
         }
 
-        /// <summary>Mobile-friendly quality: no MSAA, soft shadows, short distance.</summary>
+        /// <summary>Soft-GO clarity: MSAA 2x + anisotropic — still mid-range friendly.</summary>
         public static void ApplyMobileQuality()
         {
-            QualitySettings.antiAliasing = 0;
+            QualitySettings.antiAliasing = 4;
             QualitySettings.shadows = ShadowQuality.All;
             QualitySettings.shadowResolution = ShadowResolution.Medium;
-            QualitySettings.shadowDistance = 36f;
+            QualitySettings.shadowDistance = 40f;
             QualitySettings.shadowCascades = 1;
             QualitySettings.shadowProjection = ShadowProjection.StableFit;
             QualitySettings.anisotropicFiltering = AnisotropicFiltering.Enable;
@@ -66,6 +66,8 @@ namespace KoG.MiniMvp.Lighting
             QualitySettings.realtimeReflectionProbes = false;
             QualitySettings.billboardsFaceCameraPosition = true;
             QualitySettings.pixelLightCount = 1;
+            QualitySettings.globalTextureMipmapLimit = 0;
+            QualitySettings.lodBias = 1.25f;
         }
 
         static Light EnsureSun()

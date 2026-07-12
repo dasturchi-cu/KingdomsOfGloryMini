@@ -162,9 +162,9 @@ namespace KoG.MiniMvp.Combat
         {
             // One shared greybox mat for default spheres — tint baked once from first create.
             if (_sharedGreyboxMat != null) return _sharedGreyboxMat;
-            var shader = UrpMaterialUtil.FindUnlitShader();
-            if (shader == null) shader = Shader.Find("Unlit/Color");
-            _sharedGreyboxMat = new Material(shader != null ? shader : Shader.Find("Standard"));
+            var shader = UrpMaterialUtil.FindUnlitShader() ?? UrpMaterialUtil.FindLitShader();
+            if (shader == null) return null;
+            _sharedGreyboxMat = new Material(shader);
             if (_sharedGreyboxMat.HasProperty("_BaseColor"))
                 _sharedGreyboxMat.SetColor("_BaseColor", tint);
             if (_sharedGreyboxMat.HasProperty("_Color"))

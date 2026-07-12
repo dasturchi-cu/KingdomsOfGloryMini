@@ -20,5 +20,11 @@ namespace KoG.MiniMvp.Buildings
                 return new BuildingFootprint(def.Width, def.Depth, RotationSteps);
             }
         }
+
+        /// <summary>Temporary grid cell while dragging (visual + commit use this Anchor).</summary>
+        public void SetAnchorPreview(GridCoord anchor) => Anchor = anchor;
+
+        /// <summary>Persist committed cell after server accepts move.</summary>
+        public void CommitAnchor(GridCoord anchor) => Anchor = anchor;
     }
 }

@@ -300,9 +300,19 @@ namespace KoG.MiniMvp.World
 
         static Material GetOrCreateStylized(Material src)
         {
+            if (src == null) return null;
             var id = src.GetInstanceID();
             if (StylizedBySourceId.TryGetValue(id, out var cached) && cached != null)
                 return cached;
+
+            // SoftGo / stripped Android: broken materials have null shader → never new Material(null).
+            if (src.shader == null)
+            {
+                var fallback = UrpMaterialUtil.CreateColorMaterial(
+                    UrpMaterialUtil.GuessColor(src.name), "KoG_StylizedNull_" + src.name);
+                if (fallback != null) StylizedBySourceId[id] = fallback;
+                return fallback;
+            }
 
             var m = new Material(src);
             m.name = src.name + "_Stylized";
@@ -384,8 +394,15 @@ namespace KoG.MiniMvp.World
         static void EnsureMats()
         {
             if (_bark != null) return;
-            var shader = UrpMaterialUtil.FindLitShader();
-            if (shader == null) shader = Shader.Find("Standard");
+            var shader = UrpMaterialUtil.FindLitShader()
+                         ?? Shader.Find("Standard")
+                         ?? Shader.Find("Sprites/Default")
+                         ?? Shader.Find("UI/Default");
+            if (shader == null)
+            {
+                Debug.LogWarning("[NatureBorder] No lit/fallback shader — skipping nature mats (Android strip?)");
+                return;
+            }
 
             // Bright M&G / CoC grass palette (not muddy).
             _bark = NewMat(shader, new Color(0.42f, 0.27f, 0.14f));
@@ -405,6 +422,7 @@ namespace KoG.MiniMvp.World
 
         static Material NewMat(Shader shader, Color color)
         {
+            if (shader == null) return null;
             var m = new Material(shader);
             if (m.HasProperty("_BaseColor")) m.SetColor("_BaseColor", color);
             if (m.HasProperty("_Color")) m.SetColor("_Color", color);

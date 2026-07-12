@@ -131,6 +131,18 @@ namespace KoG.MiniMvp.World
                         next[i] = m;
                         continue;
                     }
+                    if (m.shader == null)
+                    {
+                        next[i] = UrpMaterialUtil.CreateColorMaterial(
+                            UrpMaterialUtil.GuessColor(m.name), "KoG_FitNull_" + m.name);
+                        if (next[i] != null && albedo != null)
+                        {
+                            next[i].mainTexture = albedo;
+                            if (next[i].HasProperty("_BaseMap")) next[i].SetTexture("_BaseMap", albedo);
+                        }
+                        changed = true;
+                        continue;
+                    }
                     var copy = new Material(m);
                     copy.mainTexture = albedo;
                     if (copy.HasProperty("_BaseMap")) copy.SetTexture("_BaseMap", albedo);

@@ -140,7 +140,13 @@ namespace KoG.MiniMvp.App
             _ = releaseBaseUrl;
             if (!string.IsNullOrEmpty(prefsUrl))
                 return prefsUrl.TrimEnd('/');
-            return string.IsNullOrWhiteSpace(baseUrl) ? "http://127.0.0.1:3000" : baseUrl.Trim().TrimEnd('/');
+            var resolved = string.IsNullOrWhiteSpace(baseUrl) ? "http://127.0.0.1:3000" : baseUrl.Trim().TrimEnd('/');
+#if UNITY_ANDROID && !UNITY_EDITOR
+            // Emulator loopback → host machine. Physical device: set kog_api_base to LAN IP.
+            if (resolved.Contains("127.0.0.1") || resolved.Contains("localhost"))
+                resolved = resolved.Replace("127.0.0.1", "10.0.2.2").Replace("localhost", "10.0.2.2");
+#endif
+            return resolved;
 #else
             if (!string.IsNullOrEmpty(prefsUrl))
             {
@@ -174,6 +180,18 @@ namespace KoG.MiniMvp.App
 
         void Awake()
         {
+            // Soft-GO phone: always landscape (user: yonbosh). Portrait lock caused sideways crop on rotate.
+            Screen.autorotateToPortrait = false;
+            Screen.autorotateToPortraitUpsideDown = false;
+            Screen.autorotateToLandscapeLeft = true;
+            Screen.autorotateToLandscapeRight = true;
+            Screen.orientation = ScreenOrientation.AutoRotation;
+#if DEVELOPMENT_BUILD || UNITY_EDITOR
+            // Keep Game view clear — Dev Console overlay hid thumb CTAs on Android.
+            Debug.developerConsoleVisible = false;
+            Debug.developerConsoleEnabled = false;
+#endif
+
             _api = new ApiClient(ResolveBaseUrl());
             var funnel = GetComponent<FunnelAnalytics>();
             if (funnel == null) funnel = gameObject.AddComponent<FunnelAnalytics>();
@@ -416,10 +434,12 @@ namespace KoG.MiniMvp.App
                 if (_buildings == null) _buildings = gameObject.AddComponent<BuildingSystem>();
                 _buildings.Configure(_api, () => SessionStore.Token, () => SessionStore.PlayerId, _buildingGrid);
                 _buildings.StatusChanged += msg => SetStatus(msg);
+                _buildings.StateChanged += OnBuildingStateChanged;
                 _buildings.MutationSucceeded += () =>
                 {
                     if (_hud != null) _hud.SetPlacementMode(false);
                     if (_troopInput != null) _troopInput.SetEnabled(true);
+                    StartCoroutine(LoadPlayerState());
                 };
             }
 
@@ -427,9 +447,59 @@ namespace KoG.MiniMvp.App
             {
                 _placementInput = GetComponent<PlacementInputDriver>();
                 if (_placementInput == null) _placementInput = gameObject.AddComponent<PlacementInputDriver>();
-                var cam = UnityEngine.Camera.main;
-                _placementInput.Bind(_buildings, cam);
             }
+
+            var cam = UnityEngine.Camera.main;
+            _placementInput.Bind(_buildings, cam, () => _selectedBuildingId);
+
+            WireCameraPanBlock();
+        }
+
+        void WireCameraPanBlock()
+        {
+            if (_cocCamera == null)
+            {
+                var cam = UnityEngine.Camera.main;
+                if (cam != null)
+                {
+                    _cocCamera = cam.GetComponent<CoCCameraController>();
+                    if (_cocCamera == null) _cocCamera = cam.gameObject.AddComponent<CoCCameraController>();
+                }
+            }
+
+            if (_cocCamera != null)
+            {
+                _cocCamera.BlocksPan = () =>
+                    (_placementInput != null && _placementInput.BlocksCameraPan) ||
+                    (_buildings != null && _buildings.BlocksCameraPan);
+            }
+        }
+
+        /// <summary>While dragging a building, keep the mesh under the finger on the grid.</summary>
+        void SyncRelocateVisual()
+        {
+            if (_buildings == null || !_buildings.IsRelocating) return;
+            var id = _buildings.RelocatingBuildingId;
+            if (string.IsNullOrEmpty(id)) return;
+            if (!_buildings.TryGet(id, out var inst)) return;
+            if (!_buildingViews.TryGetValue(id, out var go) || go == null) return;
+
+            var world = ResolveBuildingWorldPos(inst.Type, inst.Anchor.X, inst.Anchor.Z);
+            go.transform.position = world;
+            var marker = go.GetComponent<BuildingMarker>();
+            if (marker != null)
+            {
+                marker.gridX = inst.Anchor.X;
+                marker.gridZ = inst.Anchor.Z;
+            }
+        }
+
+        void OnBuildingStateChanged()
+        {
+            SyncRelocateVisual();
+            if (_hud == null || _buildings == null) return;
+            if (_buildings.IsPlacing)
+                _hud.SetPlacementValid(_buildings.Session.IsValid);
         }
 
         void BeginPlace(string buildingType)
@@ -449,7 +519,12 @@ namespace KoG.MiniMvp.App
 
             if (_buildings.BeginPlacement(buildingType))
             {
-                if (_hud != null) _hud.SetPlacementMode(true);
+                var canRotate = BuildingDefinitionCatalog.GetOrDefault(buildingType).CanRotate;
+                if (_hud != null)
+                {
+                    _hud.SetPlacementMode(true, canRotate);
+                    _hud.SetPlacementValid(true);
+                }
                 if (_troopInput != null) _troopInput.SetEnabled(false);
             }
         }
@@ -484,7 +559,10 @@ namespace KoG.MiniMvp.App
                 // Bounce the most recently selected / newest building.
                 if (!string.IsNullOrEmpty(_selectedBuildingId) &&
                     _buildingViews.TryGetValue(_selectedBuildingId, out var go) && go != null)
+                {
                     WorldFeedback.PlaceDrop(go.transform);
+                    WorldFeedback.PlaceBurst(go.transform.position);
+                }
             }
         }
 
@@ -697,15 +775,17 @@ namespace KoG.MiniMvp.App
             if (cam.GetComponent<UnityEngine.EventSystems.PhysicsRaycaster>() == null)
                 cam.gameObject.AddComponent<UnityEngine.EventSystems.PhysicsRaycaster>();
 
-            // CoCCameraController owns pose; app only supplies field center + framing size.
-            _cocCamera.Configure(FieldCenter, FieldWorldSize, 5.5f);
-            _cocCamera.FocusBase(FieldCenter, FieldWorldSize * 0.55f);
+            // CoCCameraController owns pose; aspect-fit framing kills empty sky letterbox.
+            var fit = CoCCameraController.FitOrthoForBase(FieldWorldSize, 1.08f);
+            _cocCamera.Configure(FieldCenter, FieldWorldSize, 4f);
+            _cocCamera.FocusBase(FieldCenter, fit);
+            WireCameraPanBlock();
 
             BaseLightingSetup.Apply(FieldCenter);
             FieldVisualBuilder.FinalizeHierarchy();
 
             // Re-assert pose after hierarchy/lighting (no parent fight, focus never stuck at origin).
-            _cocCamera.FocusBase(FieldCenter, FieldWorldSize * 0.55f);
+            _cocCamera.FocusBase(FieldCenter, fit);
 
             var village = GameObject.Find("Village");
             MobileVillageOptimize.Apply(village != null ? village.transform : null, cam);
@@ -1815,7 +1895,8 @@ namespace KoG.MiniMvp.App
             if (click == null) click = go.AddComponent<BuildingClickRelay>();
             click.onClick = () =>
             {
-                if (_buildings != null && _buildings.IsPlacing) return;
+                if (_buildings != null && (_buildings.IsPlacing || _buildings.IsRelocating)) return;
+                if (Time.frameCount <= BuildingClickRelay.SuppressClickFrames) return;
                 _pendingDestroyId = null;
                 _selectedBuildingId = id;
                 BuildingSelectFx.Select(go);
@@ -1864,7 +1945,7 @@ namespace KoG.MiniMvp.App
             }
 
             if (_cocCamera != null)
-                _cocCamera.FocusBase(focus, FieldWorldSize * 0.62f);
+                _cocCamera.FocusBase(focus, CoCCameraController.FitOrthoForBase(FieldWorldSize, 1.05f));
         }
 
         Transform ResolveGameplayRoot()
@@ -1951,15 +2032,20 @@ namespace KoG.MiniMvp.App
 
     public sealed class BuildingClickRelay : MonoBehaviour, UnityEngine.EventSystems.IPointerClickHandler
     {
+        /// <summary>Ignore clicks through this Unity frame (set after drag-release).</summary>
+        public static int SuppressClickFrames;
+
         public System.Action onClick;
 
         public void OnPointerClick(UnityEngine.EventSystems.PointerEventData eventData)
         {
+            if (Time.frameCount <= SuppressClickFrames) return;
             onClick?.Invoke();
         }
 
         void OnMouseDown()
         {
+            if (Time.frameCount <= SuppressClickFrames) return;
             onClick?.Invoke();
         }
     }

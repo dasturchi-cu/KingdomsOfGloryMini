@@ -25,23 +25,24 @@ namespace KoG.MiniMvp.Lighting
         {
             QualitySettings.pixelLightCount = 1;
             QualitySettings.globalTextureMipmapLimit = 0;
-            QualitySettings.lodBias = 1f;
+            QualitySettings.lodBias = 1.25f;
             QualitySettings.maximumLODLevel = 0;
             QualitySettings.particleRaycastBudget = 64;
             QualitySettings.asyncUploadTimeSlice = 2;
             QualitySettings.asyncUploadBufferSize = 16;
             QualitySettings.streamingMipmapsActive = false;
-            // Mid-range Android: MSAA 2/4 is a common GPU bottleneck — prefer off.
-            QualitySettings.antiAliasing = 0;
+            // Soft-GO clarity: keep MSAA 2 (BaseLightingSetup).
+            QualitySettings.antiAliasing = Mathf.Max(QualitySettings.antiAliasing, 4);
         }
 
         static void ConfigureBuiltInCamera(UnityEngine.Camera cam)
         {
             if (cam == null) return;
             cam.allowHDR = false;
-            cam.allowMSAA = false;
+            cam.allowMSAA = true;
             cam.depthTextureMode = DepthTextureMode.None;
             cam.layerCullSpherical = true;
+            cam.backgroundColor = new Color(0.42f, 0.68f, 0.38f);
         }
 
         static void ForceFieldReceiveShadows(Transform villageRoot)

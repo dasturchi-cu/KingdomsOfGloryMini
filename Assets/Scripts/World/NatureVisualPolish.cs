@@ -34,7 +34,8 @@ namespace KoG.MiniMvp.World
                 {
                     var src = mats[i];
                     if (src == null) { next[i] = null; continue; }
-                    var m = new Material(src);
+                    var m = UrpMaterialUtil.SafeClone(src, "_Polish");
+                    if (m == null) { next[i] = src; continue; }
                     var c = Color.white;
                     if (m.HasProperty("_BaseColor")) c = m.GetColor("_BaseColor");
                     else if (m.HasProperty("_Color")) c = m.GetColor("_Color");
@@ -87,9 +88,12 @@ namespace KoG.MiniMvp.World
         {
             if (_aoRingMat == null)
             {
-                var shader = Shader.Find("Universal Render Pipeline/Unlit");
-                if (shader == null) shader = Shader.Find("Unlit/Transparent");
-                if (shader == null) shader = Shader.Find("Sprites/Default");
+                var shader = UrpMaterialUtil.FindUnlitShader();
+                if (shader == null)
+                {
+                    Debug.LogWarning("[NatureVisualPolish] AO ring skipped — no shader");
+                    return;
+                }
                 _aoRingMat = new Material(shader);
                 _aoRingMat.name = "NatureContactAO_Mat";
                 var tex = CreateAoRingTexture(64);

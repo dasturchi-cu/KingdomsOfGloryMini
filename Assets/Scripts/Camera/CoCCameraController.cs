@@ -1,5 +1,5 @@
+using KoG.MiniMvp.InputUtil;
 using UnityEngine;
-using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.Controls;
 
@@ -23,10 +23,10 @@ namespace KoG.MiniMvp.Camera
         const float PanSpeed = 0.024f;
         const float PinchZoomSpeed = 0.0045f;
         const float ScrollZoomSpeed = 1.35f;
-        const float MinOrtho = 8f;
-        const float MaxOrtho = 18f;
-        const float DefaultOrtho = 12f;
-        const float UiBottomGuardPx = 210f;
+        const float MinOrtho = 7f;
+        const float MaxOrtho = 16f;
+        const float DefaultOrtho = 10.5f;
+        const float UiBottomGuardPx = 160f;
         const float SoftClampStrength = 8f;
         const float EdgeRubber = 2.8f;
         const float FocusLerp = 7.5f;
@@ -53,6 +53,9 @@ namespace KoG.MiniMvp.Camera
         float _punchAmount;
         Vector3 _punchOffset;
         float _orthoSize = DefaultOrtho;
+
+        /// <summary>When true (placing / relocating building), skip pan — zoom still ok.</summary>
+        public System.Func<bool> BlocksPan;
 
         public Vector3 Focus => _focus;
         public bool IsConfigured => _configured;
@@ -109,6 +112,16 @@ namespace KoG.MiniMvp.Camera
             ApplyTransform();
         }
 
+        /// <summary>Ortho that fills the short screen axis with the square base (+margin).</summary>
+        public static float FitOrthoForBase(float fieldWorldSize, float margin = 1.12f)
+        {
+            var half = Mathf.Max(fieldWorldSize * 0.5f, 4f) * margin;
+            var aspect = (float)Screen.width / Mathf.Max(1, Screen.height);
+            // ortho = half-height. Portrait needs larger ortho to fit width.
+            var ortho = aspect < 1f ? half / Mathf.Max(aspect, 0.5f) : half;
+            return Mathf.Clamp(ortho, MinOrtho, MaxOrtho);
+        }
+
         public void FocusBase(Vector3 focus, float orthoSize)
         {
             BindCamera();
@@ -144,13 +157,67 @@ namespace KoG.MiniMvp.Camera
         void LateUpdate()
         {
             if (_cam == null) return;
-            HandleTouch();
-            HandleMouseEditor();
-            ApplyMomentum();
+            if (BlocksPan != null && BlocksPan())
+            {
+                // Drop any in-progress pan so building drag owns the pointer.
+                _dragging = false;
+                _panArmed = false;
+                _activeFinger = -1;
+                _velocity = Vector3.zero;
+                HandleZoomOnly();
+            }
+            else
+            {
+                HandleTouch();
+                HandleMouseEditor();
+                ApplyMomentum();
+            }
+
             ApplySmoothFocus();
             SoftClampFocus(hard: false);
             TickPunch();
             ApplyTransform();
+        }
+
+        void HandleZoomOnly()
+        {
+            var ts = Touchscreen.current;
+            if (ts != null)
+            {
+                TouchControl t0 = null;
+                TouchControl t1 = null;
+                var count = 0;
+                foreach (var touch in ts.touches)
+                {
+                    if (!touch.press.isPressed && !touch.press.wasPressedThisFrame)
+                        continue;
+                    if (count == 0) t0 = touch;
+                    else if (count == 1) t1 = touch;
+                    count++;
+                    if (count >= 2) break;
+                }
+
+                if (count >= 2 && t0 != null && t1 != null)
+                {
+                    var a = t0.position.ReadValue();
+                    var b = t1.position.ReadValue();
+                    var dist = Vector2.Distance(a, b);
+                    if (_lastPinchDist > 0f)
+                        OrthoSize -= (dist - _lastPinchDist) * PinchZoomSpeed;
+                    _lastPinchDist = dist;
+                    return;
+                }
+
+                _lastPinchDist = -1f;
+            }
+
+            var mouse = Mouse.current;
+            if (mouse != null)
+            {
+                var scroll = mouse.scroll.ReadValue().y;
+                if (Mathf.Abs(scroll) > 0.01f)
+                    OrthoSize -= scroll * 0.01f * ScrollZoomSpeed;
+            }
         }
 
         void TickPunch()
@@ -210,7 +277,8 @@ namespace KoG.MiniMvp.Camera
             _cam.nearClipPlane = 0.1f;
             _cam.farClipPlane = 200f;
             _cam.clearFlags = CameraClearFlags.SolidColor;
-            _cam.backgroundColor = new Color(0.52f, 0.74f, 0.92f);
+            // Soft grass horizon — no empty blue letterbox feel on wide phones.
+            _cam.backgroundColor = new Color(0.42f, 0.68f, 0.38f);
             _cam.allowMSAA = true;
             _cam.allowHDR = false;
             _cam.transform.rotation = PoseRotation();
@@ -446,15 +514,10 @@ namespace KoG.MiniMvp.Camera
 
         static bool IsOverUi(Vector2 screenPos)
         {
+            // Bottom HUD strip — never start a pan from here.
             if (screenPos.y < UiBottomGuardPx) return true;
-            var es = EventSystem.current;
-            if (es == null) return false;
-            if (Touchscreen.current != null && Touchscreen.current.primaryTouch.press.isPressed)
-            {
-                var id = Touchscreen.current.primaryTouch.touchId.ReadValue();
-                if (es.IsPointerOverGameObject(id)) return true;
-            }
-            return es.IsPointerOverGameObject();
+            // Canvas UI only (not PhysicsRaycaster buildings).
+            return PointerInputUtil.IsPointerOverUi();
         }
     }
 }

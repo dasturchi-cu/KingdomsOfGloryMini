@@ -38,9 +38,14 @@ namespace KoG.MiniMvp.Buildings
         public void SetAnchor(GridCoord anchor, bool valid)
         {
             if (!IsActive) return;
+            if (Anchor.Equals(anchor) && IsValid == valid) return;
             Anchor = anchor;
             IsValid = valid;
         }
+
+        /// <summary>True when SetAnchor would change state (caller can skip preview refresh).</summary>
+        public bool WouldChangeAnchor(GridCoord anchor, bool valid) =>
+            IsActive && (!Anchor.Equals(anchor) || IsValid != valid);
 
         public void Rotate(int steps = 1)
         {

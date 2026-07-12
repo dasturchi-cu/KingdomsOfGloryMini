@@ -12,8 +12,9 @@ namespace KoG.MiniMvp.UI
     /// </summary>
     public sealed class MiniMvpHud : MonoBehaviour
     {
-        /// <summary>Thumb-zone action bar — loop + build tools; social is a sheet.</summary>
-        public const float BottomBarHeight = 210f;
+        /// <summary>Thumb-zone action bar — compact in landscape so the base stays fully visible.</summary>
+        public static float BottomBarHeight =>
+            Screen.width > Screen.height ? 140f : 210f;
 
         Text _title;
         Text _status;
@@ -61,6 +62,8 @@ namespace KoG.MiniMvp.UI
         InputField _passwordField;
         bool _busy;
         bool _raidCompleteReady;
+        bool _placing;
+        bool _hasSelection;
         readonly List<Button> _actionButtons = new List<Button>(24);
 
         public Action OnPlaceMine;
@@ -126,6 +129,13 @@ namespace KoG.MiniMvp.UI
         Text _completeRaidLabel;
         Image _completeRaidImage;
         Text _resultTitle;
+        Button _confirmPlaceBtn;
+        Button _rotatePlaceBtn;
+        Image _confirmPlaceImage;
+        Color _confirmPlaceOk = new Color(0.18f, 0.52f, 0.28f);
+        Color _confirmPlaceBad = new Color(0.38f, 0.28f, 0.22f);
+        bool _placementCanRotate = true;
+        bool _placementValid = true;
 
         public string Username => _userField != null ? _userField.text : "";
         public string DisplayName => _displayField != null ? _displayField.text : "";
@@ -174,6 +184,7 @@ namespace KoG.MiniMvp.UI
                 }
                 btn.interactable = !busy;
             }
+            RefreshPlacementControls();
         }
 
         public void SetStatus(string status)
@@ -258,29 +269,58 @@ namespace KoG.MiniMvp.UI
 
         public void SetResources(long gold, long mana, long diamond, int barbarians, int housingUsed, int housingMax)
         {
-            if (_goldChip != null) _goldChip.text = "● " + FormatNum(gold);
-            if (_manaChip != null) _manaChip.text = "◆ " + FormatNum(mana);
-            if (_diamondChip != null) _diamondChip.text = "◇ " + FormatNum(diamond);
+            if (_goldChip != null) _goldChip.text = "Oltin " + FormatNum(gold);
+            if (_manaChip != null) _manaChip.text = "Mana " + FormatNum(mana);
+            if (_diamondChip != null) _diamondChip.text = "Olmos " + FormatNum(diamond);
             if (_troopChip != null)
             {
                 if (housingMax > 0)
-                    _troopChip.text = "⚔ " + housingUsed + "/" + housingMax;
+                    _troopChip.text = "Askar " + housingUsed + "/" + housingMax;
                 else
-                    _troopChip.text = "⚔ " + barbarians;
+                    _troopChip.text = "Askar " + barbarians;
             }
         }
 
         public void SetSelected(string label)
         {
-            if (_selectedChip == null) return;
-            _selectedChip.text = string.IsNullOrEmpty(label) ? "Tanlangan: —" : "Tanlangan: " + label;
+            _hasSelection = !string.IsNullOrEmpty(label);
+            if (_selectedChip != null)
+                _selectedChip.text = _hasSelection ? "Tanlangan: " + label : "Tanlangan: —";
+            RefreshActionBars();
         }
 
-        public void SetPlacementMode(bool placing)
+        public void SetPlacementMode(bool placing, bool canRotate = true)
         {
-            if (_placementBar != null) _placementBar.SetActive(placing);
-            if (_buildActionBar != null) _buildActionBar.SetActive(!placing);
-            if (_loopActionBar != null) _loopActionBar.SetActive(!placing);
+            _placing = placing;
+            _placementCanRotate = canRotate;
+            if (!placing) _placementValid = true;
+            RefreshPlacementControls();
+            RefreshActionBars();
+        }
+
+        /// <summary>Green Tasdiq when cell is valid; muted when overlap / keep-out.</summary>
+        public void SetPlacementValid(bool valid)
+        {
+            _placementValid = valid;
+            RefreshPlacementControls();
+        }
+
+        void RefreshPlacementControls()
+        {
+            if (_rotatePlaceBtn != null)
+                _rotatePlaceBtn.interactable = !_busy && _placing && _placementCanRotate;
+            if (_confirmPlaceBtn != null)
+                _confirmPlaceBtn.interactable = !_busy && _placing;
+            if (_confirmPlaceImage != null)
+                _confirmPlaceImage.color = _placementValid ? _confirmPlaceOk : _confirmPlaceBad;
+        }
+
+        void RefreshActionBars()
+        {
+            if (_placementBar != null) _placementBar.SetActive(_placing);
+            // Build tools only when a building is selected — not stacked over the loop bar.
+            if (_buildActionBar != null) _buildActionBar.SetActive(!_placing && _hasSelection);
+            if (_loopActionBar != null) _loopActionBar.SetActive(!_placing);
         }
 
         /// <summary>Disable Complete until raid wait elapsed; show remaining seconds; gold pulse when ready.</summary>
@@ -562,8 +602,11 @@ namespace KoG.MiniMvp.UI
             canvas.sortingOrder = 100;
             var scaler = canvasGo.AddComponent<CanvasScaler>();
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-            scaler.referenceResolution = new Vector2(1080, 1920);
-            scaler.matchWidthOrHeight = 0.55f;
+            // Landscape phone (16:9 / 20:9) — not portrait 1080×1920.
+            scaler.referenceResolution = new Vector2(1920, 1080);
+            scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
+            scaler.matchWidthOrHeight = 0.5f;
+            scaler.referencePixelsPerUnit = 100f;
             canvasGo.AddComponent<GraphicRaycaster>();
 
             var safeGo = new GameObject("SafeArea", typeof(RectTransform));
@@ -576,36 +619,44 @@ namespace KoG.MiniMvp.UI
             safeGo.AddComponent<SafeAreaPad>();
             var root = safeGo.transform;
 
+            var topH = Screen.width > Screen.height ? 96f : 168f;
             var top = Panel(root, "TopBar",
                 new Vector2(0f, 1f), new Vector2(1f, 1f),
-                new Vector2(0f, -10f), new Vector2(-24f, 168f),
+                new Vector2(0f, -8f), new Vector2(-24f, topH),
                 new Color(0.05f, 0.07f, 0.10f, 0.88f));
             top.pivot = new Vector2(0.5f, 1f);
-            top.anchoredPosition = new Vector2(0f, -10f);
-            top.sizeDelta = new Vector2(-24f, 168f);
+            top.anchoredPosition = new Vector2(0f, -8f);
+            top.sizeDelta = new Vector2(-24f, topH);
 
             _title = Label(top.transform, "Title", "Kingdoms of Glory", 22, TextAnchor.UpperLeft,
                 new Vector2(16f, -10f), new Vector2(360f, 28f), new Color(1f, 0.90f, 0.48f));
 
-            var muteX = 390f;
-            MakeBtn(top.transform, "Mute", MuteLabel(), ref muteX, -32f, 52f, 0f, 48f,
+            // Resource chips (right → left): mute, troops, diamond, mana, gold — no emoji (Android tofu/black square).
+            _troopChip = MakeResourceChip(top.transform, "TroopChip", "Askar 0/100",
+                new Color(0.10f, 0.20f, 0.34f, 0.95f), new Color(0.78f, 0.90f, 1f), -12f, 128f);
+            _diamondChip = MakeResourceChip(top.transform, "DiamondChip", "Olmos 0",
+                new Color(0.22f, 0.16f, 0.34f, 0.95f), new Color(0.85f, 0.78f, 1f), -148f, 108f);
+            _manaChip = MakeResourceChip(top.transform, "ManaChip", "Mana 0",
+                new Color(0.10f, 0.28f, 0.36f, 0.95f), new Color(0.55f, 0.88f, 1f), -264f, 100f);
+            _goldChip = MakeResourceChip(top.transform, "GoldChip", "Oltin 0",
+                new Color(0.38f, 0.26f, 0.06f, 0.95f), new Color(1f, 0.88f, 0.28f), -372f, 110f);
+
+            var muteX = -490f;
+            var muteBtn = MakeBtn(top.transform, "Mute", MuteLabel(), ref muteX, -28f, 72f, 0f, 40f,
                 new Color(0.18f, 0.20f, 0.26f), () =>
                 {
                     KoG.MiniMvp.Audio.MiniAudio.ToggleMute();
                     RefreshMuteLabel();
                 });
-            var muteGo = top.transform.Find("Mute");
-            if (muteGo != null) _muteLabel = muteGo.GetComponentInChildren<Text>();
-
-            // Resource chips (right → left): troops, diamond, mana, gold
-            _troopChip = MakeResourceChip(top.transform, "TroopChip", "⚔ 0/100",
-                new Color(0.10f, 0.20f, 0.34f, 0.95f), new Color(0.78f, 0.90f, 1f), -12f, 130f);
-            _diamondChip = MakeResourceChip(top.transform, "DiamondChip", "◇ 0",
-                new Color(0.22f, 0.16f, 0.34f, 0.95f), new Color(0.85f, 0.78f, 1f), -150f, 100f);
-            _manaChip = MakeResourceChip(top.transform, "ManaChip", "◆ 0",
-                new Color(0.10f, 0.28f, 0.36f, 0.95f), new Color(0.55f, 0.88f, 1f), -258f, 100f);
-            _goldChip = MakeResourceChip(top.transform, "GoldChip", "● 0",
-                new Color(0.38f, 0.26f, 0.06f, 0.95f), new Color(1f, 0.88f, 0.28f), -366f, 110f);
+            if (muteBtn != null)
+            {
+                var mrt = muteBtn.GetComponent<RectTransform>();
+                mrt.anchorMin = new Vector2(1f, 1f);
+                mrt.anchorMax = new Vector2(1f, 1f);
+                mrt.pivot = new Vector2(1f, 1f);
+                mrt.anchoredPosition = new Vector2(-490f, -8f);
+                _muteLabel = muteBtn.GetComponentInChildren<Text>();
+            }
 
             _status = Label(top.transform, "Status", "Guest bilan boshlang", 16, TextAnchor.UpperLeft,
                 new Vector2(16f, -48f), new Vector2(980f, 28f), new Color(0.96f, 0.94f, 0.82f));
@@ -615,7 +666,7 @@ namespace KoG.MiniMvp.UI
                 new Vector2(16f, -106f), new Vector2(520f, 24f), new Color(0.68f, 0.84f, 1f));
             _raidHud = Label(top.transform, "RaidHud", "", 15, TextAnchor.UpperLeft,
                 new Vector2(16f, -152f), new Vector2(1040f, 26f), new Color(1f, 0.82f, 0.45f));
-            _manaTip = Label(top.transform, "ManaTip", "◆ Mana = askar · ⚔ = lager joyi · ● Gold = qurilish", 13, TextAnchor.UpperLeft,
+            _manaTip = Label(top.transform, "ManaTip", "Mana = askar · Askar = lager · Oltin = qurilish", 13, TextAnchor.UpperLeft,
                 new Vector2(16f, -132f), new Vector2(780f, 22f), new Color(0.70f, 0.78f, 0.86f));
 
             BuildErrorBanner(root);
@@ -678,41 +729,51 @@ namespace KoG.MiniMvp.UI
 
         void BuildGameBar(Transform root)
         {
-            _gameRoot = Panel(root, "GameBar",
-                new Vector2(0.5f, 0f), new Vector2(0.5f, 0f),
-                new Vector2(0f, BottomBarHeight * 0.5f), new Vector2(1060f, BottomBarHeight),
-                new Color(0.04f, 0.06f, 0.09f, 0.94f)).gameObject;
+            // Full-bleed bottom thumb bar (not a floating left-shifted card).
+            var barGo = new GameObject("GameBar", typeof(RectTransform), typeof(Image));
+            barGo.transform.SetParent(root, false);
+            var barRt = barGo.GetComponent<RectTransform>();
+            barRt.anchorMin = new Vector2(0f, 0f);
+            barRt.anchorMax = new Vector2(1f, 0f);
+            barRt.pivot = new Vector2(0.5f, 0f);
+            barRt.anchoredPosition = Vector2.zero;
+            barRt.sizeDelta = new Vector2(0f, BottomBarHeight);
+            barGo.GetComponent<Image>().color = new Color(0.04f, 0.06f, 0.09f, 0.94f);
+            _gameRoot = barGo;
 
             var accent = Panel(_gameRoot.transform, "BarAccent",
-                new Vector2(0.5f, 1f), new Vector2(0.5f, 1f),
-                new Vector2(0f, -2f), new Vector2(1060f, 4f),
+                new Vector2(0f, 1f), new Vector2(1f, 1f),
+                new Vector2(0f, -2f), new Vector2(0f, 4f),
                 new Color(0.85f, 0.65f, 0.18f, 0.85f));
             accent.pivot = new Vector2(0.5f, 1f);
+            accent.offsetMin = new Vector2(0f, -4f);
+            accent.offsetMax = new Vector2(0f, 0f);
 
             Label(_gameRoot.transform, "Hint",
-                "Kon/Kazarma → Tasdiq/Aylantir/Bekor · Tanlangan: Yangila/Buz/Tuzat",
-                15, TextAnchor.UpperLeft, new Vector2(20f, -6f), new Vector2(1020f, 22f),
+                "Kon/Kazarma → Tasdiq · Tanlangan: Yangila/Buz/Tuzat",
+                14, TextAnchor.UpperLeft, new Vector2(16f, -4f), new Vector2(900f, 20f),
                 new Color(0.78f, 0.82f, 0.88f));
 
-            const float bw = 148f;
-            const float gap = 10f;
-            const float btnH = 48f;
-            var toolsY = 78f;
-            var row1Y = 22f;
-            var row2Y = -36f;
+            const float bw = 132f;
+            const float gap = 8f;
+            const float btnH = 44f;
+            var toolsY = BottomBarHeight > 160f ? 72f : 58f;
+            var row1Y = 18f;
+            var row2Y = -30f;
 
             _placementBar = new GameObject("PlacementBar", typeof(RectTransform));
             _placementBar.transform.SetParent(_gameRoot.transform, false);
             var placeRt = _placementBar.GetComponent<RectTransform>();
             placeRt.anchorMin = new Vector2(0.5f, 0.5f);
             placeRt.anchorMax = new Vector2(0.5f, 0.5f);
-            placeRt.sizeDelta = new Vector2(1060f, 56f);
+            placeRt.sizeDelta = new Vector2(1600f, 56f);
             placeRt.anchoredPosition = new Vector2(0f, toolsY);
 
-            var px = -520f;
-            MakeBtn(_placementBar.transform, "ConfirmPlace", "Tasdiq", ref px, 0f, bw, gap, btnH,
-                new Color(0.18f, 0.52f, 0.28f), () => Safe(OnConfirmPlace));
-            MakeBtn(_placementBar.transform, "RotatePlace", "Aylantir", ref px, 0f, bw, gap, btnH,
+            var px = -((3f * (bw + gap) - gap) * 0.5f);
+            _confirmPlaceBtn = MakeBtn(_placementBar.transform, "ConfirmPlace", "Tasdiq", ref px, 0f, bw, gap, btnH,
+                _confirmPlaceOk, () => Safe(OnConfirmPlace));
+            _confirmPlaceImage = _confirmPlaceBtn != null ? _confirmPlaceBtn.GetComponent<Image>() : null;
+            _rotatePlaceBtn = MakeBtn(_placementBar.transform, "RotatePlace", "Aylantir", ref px, 0f, bw, gap, btnH,
                 new Color(0.28f, 0.40f, 0.55f), () => Safe(OnRotatePlace));
             MakeBtn(_placementBar.transform, "CancelPlace", "Bekor", ref px, 0f, bw, gap, btnH,
                 new Color(0.45f, 0.22f, 0.20f), () => Safe(OnCancelPlace));
@@ -723,28 +784,29 @@ namespace KoG.MiniMvp.UI
             var buildRt = _buildActionBar.GetComponent<RectTransform>();
             buildRt.anchorMin = new Vector2(0.5f, 0.5f);
             buildRt.anchorMax = new Vector2(0.5f, 0.5f);
-            buildRt.sizeDelta = new Vector2(1060f, 56f);
+            buildRt.sizeDelta = new Vector2(1600f, 56f);
             buildRt.anchoredPosition = new Vector2(0f, toolsY);
 
-            var bx = -520f;
+            var bx = -((4f * (bw + gap) - gap) * 0.5f);
             MakeBtn(_buildActionBar.transform, "Destroy", "Buz", ref bx, 0f, bw, gap, btnH,
                 new Color(0.50f, 0.18f, 0.18f), () => Safe(OnDestroyBuilding));
             MakeBtn(_buildActionBar.transform, "Repair", "Tuzat", ref bx, 0f, bw, gap, btnH,
                 new Color(0.35f, 0.42f, 0.22f), () => Safe(OnRepairBuilding));
             MakeBtn(_buildActionBar.transform, "CancelUpg", "Bekor yangi", ref bx, 0f, bw, gap, btnH,
                 new Color(0.42f, 0.32f, 0.18f), () => Safe(OnCancelUpgrade));
-            MakeBtn(_buildActionBar.transform, "Speedup", "Tezkor ◇", ref bx, 0f, bw, gap, btnH,
+            MakeBtn(_buildActionBar.transform, "Speedup", "Tezkor", ref bx, 0f, bw, gap, btnH,
                 new Color(0.22f, 0.48f, 0.52f), () => Safe(OnSpeedup));
+            _buildActionBar.SetActive(false);
 
             _loopActionBar = new GameObject("LoopActionBar", typeof(RectTransform));
             _loopActionBar.transform.SetParent(_gameRoot.transform, false);
             var loopRt = _loopActionBar.GetComponent<RectTransform>();
             loopRt.anchorMin = new Vector2(0.5f, 0.5f);
             loopRt.anchorMax = new Vector2(0.5f, 0.5f);
-            loopRt.sizeDelta = new Vector2(1060f, 140f);
-            loopRt.anchoredPosition = new Vector2(0f, -8f);
+            loopRt.sizeDelta = new Vector2(1600f, 120f);
+            loopRt.anchoredPosition = new Vector2(0f, -4f);
 
-            var x = -520f;
+            var x = -((6f * (bw + gap) - gap) * 0.5f);
             MakeBtn(_loopActionBar.transform, "Mine", "Kon", ref x, row1Y + 8f, bw, gap, btnH,
                 new Color(0.52f, 0.40f, 0.12f), () => Safe(OnPlaceMine));
             MakeBtn(_loopActionBar.transform, "Barracks", "Kazarma", ref x, row1Y + 8f, bw, gap, btnH,
@@ -762,7 +824,7 @@ namespace KoG.MiniMvp.UI
             MakeBtn(_loopActionBar.transform, "Upgrade", "Yangila", ref x, row1Y + 8f, bw, gap, btnH,
                 new Color(0.40f, 0.28f, 0.52f), () => Safe(OnUpgrade));
 
-            x = -520f;
+            x = -((4f * (bw + gap) - gap) * 0.5f);
             MakeBtn(_loopActionBar.transform, "Raid", "Reyd", ref x, row2Y + 8f, bw, gap, btnH,
                 new Color(0.58f, 0.20f, 0.16f), () => Safe(OnStartRaid));
             var completeBtn = MakeBtn(_loopActionBar.transform, "Complete", "Yakunla", ref x, row2Y + 8f, bw, gap, btnH,
@@ -772,8 +834,8 @@ namespace KoG.MiniMvp.UI
             {
                 _completeRaidLabel = completeBtn.GetComponentInChildren<Text>();
                 _completeRaidImage = completeBtn.GetComponent<Image>();
+                completeBtn.interactable = false;
             }
-            completeBtn.interactable = false;
             MakeBtn(_loopActionBar.transform, "Social", "Ijtimoiy", ref x, row2Y + 8f, bw, gap, btnH,
                 new Color(0.28f, 0.34f, 0.52f), () =>
                 {
@@ -1159,30 +1221,31 @@ namespace KoG.MiniMvp.UI
 
         void BuildAuthPanel(Transform canvas)
         {
+            // Centered card — never sit on the bottom edge (landscape cut-off).
             _authRoot = Panel(canvas, "AuthPanel",
-                new Vector2(0.5f, 0f), new Vector2(0.5f, 0f),
-                new Vector2(0f, 220f), new Vector2(740f, 400f),
+                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
+                new Vector2(0f, 12f), new Vector2(720f, 420f),
                 new Color(0.05f, 0.06f, 0.09f, 0.94f)).gameObject;
 
             Label(_authRoot.transform, "AuthTitle", "Kingdoms of Glory", 26, TextAnchor.UpperLeft,
-                new Vector2(28f, -18f), new Vector2(680f, 34f), new Color(1f, 0.9f, 0.55f));
+                new Vector2(28f, -18f), new Vector2(660f, 34f), new Color(1f, 0.9f, 0.55f));
 
             _userField = Field(_authRoot.transform, "Username", "player1", new Vector2(28f, -70f), false);
             _displayField = Field(_authRoot.transform, "Display", "Player One", new Vector2(28f, -120f), false);
             _emailField = Field(_authRoot.transform, "Email", "player1@test.com", new Vector2(28f, -170f), false);
             _passwordField = Field(_authRoot.transform, "Password", "TestPass123!@#", new Vector2(28f, -220f), true);
 
-            var x = -330f;
-            MakeBtn(_authRoot.transform, "Guest", "▶  Mehmon", ref x, -155f, 200f, 14f, 52f,
+            var x = -320f;
+            MakeBtn(_authRoot.transform, "Guest", "Mehmon", ref x, -155f, 180f, 12f, 52f,
                 new Color(0.18f, 0.52f, 0.32f), () => Safe(OnGuest));
-            MakeBtn(_authRoot.transform, "Login", "Kirish", ref x, -155f, 140f, 14f, 52f,
+            MakeBtn(_authRoot.transform, "Login", "Kirish", ref x, -155f, 140f, 12f, 52f,
                 new Color(0.22f, 0.35f, 0.55f), () => Safe(OnLogin));
-            MakeBtn(_authRoot.transform, "Register", "Ro‘yxat", ref x, -155f, 150f, 14f, 52f,
+            MakeBtn(_authRoot.transform, "Register", "Ro‘yxat", ref x, -155f, 150f, 12f, 52f,
                 new Color(0.35f, 0.28f, 0.48f), () => Safe(OnRegister));
 
             Label(_authRoot.transform, "AuthHint",
                 "Mehmon = tez start. Maydonni sudrab, pinch bilan zoom.",
-                15, TextAnchor.LowerLeft, new Vector2(28f, -380f), new Vector2(680f, 28f),
+                14, TextAnchor.LowerLeft, new Vector2(28f, 14f), new Vector2(660f, 28f),
                 new Color(0.75f, 0.78f, 0.85f));
         }
 
@@ -1259,7 +1322,7 @@ namespace KoG.MiniMvp.UI
         }
 
         static string MuteLabel() =>
-            KoG.MiniMvp.Audio.MiniAudio.Muted ? "🔇" : "🔊";
+            KoG.MiniMvp.Audio.MiniAudio.Muted ? "Jim" : "Ovoz";
 
         void RefreshMuteLabel()
         {

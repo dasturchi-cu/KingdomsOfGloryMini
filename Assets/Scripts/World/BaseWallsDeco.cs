@@ -110,6 +110,11 @@ namespace KoG.MiniMvp.World
         {
             if (_wallMat != null) return _wallMat;
             var shader = UrpMaterialUtil.FindLitShader() ?? Shader.Find("Standard");
+            if (shader == null)
+            {
+                Debug.LogWarning("[BaseWalls] WallMat skipped — no shader");
+                return null;
+            }
             _wallMat = new Material(shader);
             var c = new Color(0.62f, 0.58f, 0.52f);
             if (_wallMat.HasProperty("_BaseColor")) _wallMat.SetColor("_BaseColor", c);

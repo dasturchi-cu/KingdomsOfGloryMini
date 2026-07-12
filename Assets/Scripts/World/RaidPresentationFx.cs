@@ -317,12 +317,7 @@ namespace KoG.MiniMvp.World
 
         static Material MakeMat(Color c)
         {
-            var shader = UrpMaterialUtil.FindLitShader() ?? Shader.Find("Standard");
-            var m = new Material(shader);
-            if (m.HasProperty("_BaseColor")) m.SetColor("_BaseColor", c);
-            if (m.HasProperty("_Color")) m.SetColor("_Color", c);
-            UrpMaterialUtil.ApplyMobileSurface(m);
-            return m;
+            return UrpMaterialUtil.CreateColorMaterial(c, "KoG_RaidFx");
         }
     }
 }

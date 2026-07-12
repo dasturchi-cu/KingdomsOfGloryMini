@@ -13,25 +13,62 @@ namespace KoG.MiniMvp.World
         static Shader _unlit;
         static readonly Dictionary<int, Material> Cache = new Dictionary<int, Material>();
 
-        /// <summary>Built-in Lit first (Standard), then URP fallbacks.</summary>
+        /// <summary>Built-in Lit first (Standard), then URP fallbacks, then primitive steal.</summary>
         public static Shader FindLitShader()
         {
             if (_lit != null) return _lit;
             _lit = Shader.Find("Standard");
             if (_lit == null) _lit = Shader.Find("Universal Render Pipeline/Lit");
             if (_lit == null) _lit = Shader.Find("Universal Render Pipeline/Simple Lit");
+            if (_lit == null) _lit = Shader.Find("Sprites/Default");
+            if (_lit == null) _lit = Shader.Find("UI/Default");
+            if (_lit == null) _lit = StealBuiltinShader();
             return _lit;
         }
 
-        /// <summary>Built-in Unlit first, then URP Unlit.</summary>
+        /// <summary>Built-in Unlit — prefer textured/transparent (Unlit/Color ignores maps → white field).</summary>
         public static Shader FindUnlitShader()
         {
             if (_unlit != null) return _unlit;
-            _unlit = Shader.Find("Unlit/Color");
-            if (_unlit == null) _unlit = Shader.Find("Unlit/Transparent");
+            _unlit = Shader.Find("Unlit/Transparent");
             if (_unlit == null) _unlit = Shader.Find("Sprites/Default");
+            if (_unlit == null) _unlit = Shader.Find("Unlit/Texture");
+            if (_unlit == null) _unlit = Shader.Find("Unlit/Color");
             if (_unlit == null) _unlit = Shader.Find("Universal Render Pipeline/Unlit");
+            if (_unlit == null) _unlit = FindLitShader();
             return _unlit;
+        }
+
+        /// <summary>Never throws — returns null only if engine has zero shaders (should not happen).</summary>
+        public static Material CreateColorMaterial(Color color, string name = "KoG_Color")
+        {
+            var shader = FindLitShader() ?? FindUnlitShader();
+            if (shader == null)
+            {
+                Debug.LogError("[UrpMaterialUtil] CreateColorMaterial: no shader");
+                return null;
+            }
+            var m = new Material(shader) { name = name };
+            if (m.HasProperty("_BaseColor")) m.SetColor("_BaseColor", color);
+            if (m.HasProperty("_Color")) m.SetColor("_Color", color);
+            ApplyMobileSurface(m);
+            return m;
+        }
+
+        static Shader StealBuiltinShader()
+        {
+            try
+            {
+                var go = GameObject.CreatePrimitive(PrimitiveType.Quad);
+                var r = go.GetComponent<Renderer>();
+                var s = r != null && r.sharedMaterial != null ? r.sharedMaterial.shader : null;
+                Object.Destroy(go);
+                return s;
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         /// <summary>
@@ -117,6 +154,17 @@ namespace KoG.MiniMvp.World
             return m;
         }
 
+        /// <summary>Safe clone — never constructs Material from a null-shader source.</summary>
+        public static Material SafeClone(Material src, string nameSuffix = "_Clone")
+        {
+            if (src == null) return null;
+            if (src.shader == null)
+                return CreateColorMaterial(GuessColor(src.name), "KoG_Safe" + nameSuffix);
+            var m = new Material(src) { name = src.name + nameSuffix };
+            ApplyMobileSurface(m);
+            return m;
+        }
+
         /// <summary>Soft-GO part name → palette (matches BuildingVisualFactory).</summary>
         public static Color GuessColor(string partName)
         {
@@ -154,8 +202,8 @@ namespace KoG.MiniMvp.World
                     var key = src.GetInstanceID() ^ 0x5A5A0000;
                     if (!Cache.TryGetValue(key, out var polished))
                     {
-                        polished = new Material(src);
-                        ApplyMobileSurface(polished);
+                        polished = SafeClone(src, "_Mobile");
+                        if (polished == null) { next[i] = src; continue; }
                         Cache[key] = polished;
                     }
                     next[i] = polished;

@@ -29,9 +29,18 @@ namespace KoG.MiniMvp.Buildings
         bool _busy;
 
         public bool IsPlacing => _session.IsActive;
+        public bool IsRelocating => !string.IsNullOrEmpty(_relocateBuildingId);
         public bool IsBusy => _busy;
+        public bool BlocksCameraPan => IsPlacing || IsRelocating;
         public PlacementSession Session => _session;
+        public string RelocatingBuildingId => _relocateBuildingId;
         public IReadOnlyDictionary<string, BuildingInstance> Instances => _instances;
+
+        string _relocateBuildingId;
+        GridCoord _relocateOrigin;
+        BuildingFootprint _relocateFootprint;
+        string _relocateType;
+        bool _relocateValid;
 
         public void Configure(ApiClient api, Func<string> token, Func<string> playerId, BuildingGrid grid)
         {
@@ -154,6 +163,14 @@ namespace KoG.MiniMvp.Buildings
         public void RotatePlacement()
         {
             if (!_session.IsActive) return;
+            var def = BuildingDefinitionCatalog.GetOrDefault(_session.BuildingType);
+            if (!def.CanRotate)
+            {
+                Emit("Bu bino aylanmaydi");
+                KoG.MiniMvp.Audio.MiniAudio.PlayError();
+                return;
+            }
+
             _session.Rotate(1);
             _session.Revalidate((a, f) => Validate(a, f, _session.BuildingType));
             if (!_session.IsValid)
@@ -180,8 +197,194 @@ namespace KoG.MiniMvp.Buildings
 
             var anchor = new GridCoord(x, z);
             var valid = Validate(anchor, _session.Footprint, _session.BuildingType);
+            if (!_session.WouldChangeAnchor(anchor, valid)) return;
             _session.SetAnchor(anchor, valid);
             RefreshPreview();
+            StateChanged?.Invoke();
+        }
+
+        /// <summary>Start CoC-style drag relocate for an existing mine/barracks (not castle).</summary>
+        public bool BeginRelocate(string buildingId)
+        {
+            if (_busy || _occupancy == null || _grid == null) return false;
+            if (_session.IsActive || IsRelocating) return false;
+            if (!_instances.TryGetValue(buildingId, out var inst)) return false;
+            if (inst.Type == "castle")
+            {
+                Emit("Qasrni ko‘chirib bo‘lmaydi");
+                return false;
+            }
+
+            _relocateBuildingId = buildingId;
+            _relocateOrigin = inst.Anchor;
+            _relocateFootprint = inst.Footprint;
+            _relocateType = inst.Type;
+            _occupancy.Free(buildingId);
+            _relocateValid = Validate(inst.Anchor, _relocateFootprint, _relocateType);
+            RefreshRelocatePreview(inst.Anchor);
+            Emit("Sudrab joylang — qo‘yib yuboring");
+            StateChanged?.Invoke();
+            return true;
+        }
+
+        public void MoveRelocateToWorld(Vector3 world)
+        {
+            if (!IsRelocating || _grid == null) return;
+            if (!_grid.WorldToGrid(world, out var x, out var z))
+            {
+                x = Mathf.Clamp(Mathf.RoundToInt(world.x / _grid.CellSize), 0, _grid.GridSize - 1);
+                z = Mathf.Clamp(Mathf.RoundToInt(world.z / _grid.CellSize), 0, _grid.GridSize - 1);
+            }
+
+            var anchor = new GridCoord(x, z);
+            _relocateValid = Validate(anchor, _relocateFootprint, _relocateType);
+            RefreshRelocatePreview(anchor);
+            // Stash desired anchor on the instance temporarily for visual sync.
+            if (_instances.TryGetValue(_relocateBuildingId, out var inst))
+                inst.SetAnchorPreview(anchor);
+            StateChanged?.Invoke();
+        }
+
+        public void CancelRelocate()
+        {
+            if (!IsRelocating) return;
+            if (_instances.TryGetValue(_relocateBuildingId, out var inst))
+            {
+                inst.SetAnchorPreview(_relocateOrigin);
+                _occupancy.Occupy(_relocateBuildingId, _relocateOrigin, _relocateFootprint);
+            }
+            // Sync visual while still IsRelocating, then clear.
+            StateChanged?.Invoke();
+            ClearRelocate();
+            PlacePreviewFx.Hide();
+            Emit("Ko‘chirish bekor");
+            StateChanged?.Invoke();
+        }
+
+        public IEnumerator ConfirmRelocate()
+        {
+            if (!IsRelocating)
+                yield break;
+
+            if (!_instances.TryGetValue(_relocateBuildingId, out var inst))
+            {
+                ClearRelocate();
+                yield break;
+            }
+
+            var target = inst.Anchor;
+            if (!_relocateValid)
+            {
+                Emit("Bu katak band — qaytarildi");
+                inst.SetAnchorPreview(_relocateOrigin);
+                _occupancy.Occupy(_relocateBuildingId, _relocateOrigin, _relocateFootprint);
+                StateChanged?.Invoke();
+                ClearRelocate();
+                PlacePreviewFx.Hide();
+                StateChanged?.Invoke();
+                yield break;
+            }
+
+            if (target.X == _relocateOrigin.X && target.Z == _relocateOrigin.Z)
+            {
+                _occupancy.Occupy(_relocateBuildingId, _relocateOrigin, _relocateFootprint);
+                StateChanged?.Invoke();
+                ClearRelocate();
+                PlacePreviewFx.Hide();
+                StateChanged?.Invoke();
+                yield break;
+            }
+
+            if (_api == null)
+            {
+                Emit("API yo‘q");
+                CancelRelocate();
+                yield break;
+            }
+
+            var buildingId = _relocateBuildingId;
+            _busy = true;
+            Emit("Ko‘chirilmoqda...");
+            var body = BuildingJson.Object(
+                ("playerId", _playerId()),
+                ("buildingId", buildingId),
+                ("gridX", target.X.ToString()),
+                ("gridZ", target.Z.ToString())
+            );
+
+            yield return _api.PostJson(
+                "/api/v1/buildings/move",
+                body,
+                _token(),
+                ApiClient.NewIdempotencyKey(),
+                (code, text) =>
+                {
+                    _busy = false;
+                    if (code < 200 || code >= 300)
+                    {
+                        Emit("Ko‘chirish xato: " + BuildingJson.ExtractError(text));
+                        if (_instances.TryGetValue(buildingId, out var failInst))
+                            failInst.SetAnchorPreview(_relocateOrigin);
+                        _occupancy.Occupy(buildingId, _relocateOrigin, _relocateFootprint);
+                        StateChanged?.Invoke();
+                        ClearRelocate();
+                        PlacePreviewFx.Hide();
+                        StateChanged?.Invoke();
+                        return;
+                    }
+
+                    if (_instances.TryGetValue(buildingId, out var okInst))
+                    {
+                        okInst.CommitAnchor(target);
+                        _occupancy.Occupy(buildingId, target, okInst.Footprint);
+                    }
+                    ClearRelocate();
+                    PlacePreviewFx.Hide();
+                    KoG.MiniMvp.Audio.MiniAudio.PlayPlace();
+                    Emit("Joyiga qo‘yildi");
+                    MutationSucceeded?.Invoke();
+                    StateChanged?.Invoke();
+                });
+        }
+
+        void ClearRelocate()
+        {
+            _relocateBuildingId = null;
+            _relocateType = null;
+            _relocateValid = false;
+        }
+
+        void RefreshRelocatePreview(GridCoord anchor)
+        {
+            if (_grid == null) return;
+            var world = _grid.GridToWorld(anchor.X, anchor.Z);
+            PlacePreviewFx.ShowFootprint(
+                world,
+                _grid.CellSize,
+                _relocateFootprint.OccupiedWidth,
+                _relocateFootprint.OccupiedDepth,
+                _relocateFootprint.YawDegrees,
+                _relocateValid,
+                _relocateType);
+        }
+
+        void RefreshPreview()
+        {
+            if (!_session.IsActive || _grid == null)
+            {
+                PlacePreviewFx.Hide();
+                return;
+            }
+
+            var world = _grid.GridToWorld(_session.Anchor.X, _session.Anchor.Z);
+            PlacePreviewFx.ShowFootprint(
+                world,
+                _grid.CellSize,
+                _session.Footprint.OccupiedWidth,
+                _session.Footprint.OccupiedDepth,
+                _session.Footprint.YawDegrees,
+                _session.IsValid,
+                _session.BuildingType);
         }
 
         public IEnumerator ConfirmPlacement()
@@ -195,6 +398,8 @@ namespace KoG.MiniMvp.Buildings
             if (!_session.IsValid)
             {
                 Emit("Bu katak band yoki taqiqlangan");
+                KoG.MiniMvp.Audio.MiniAudio.PlayError();
+                PlacePreviewFx.RejectPulse();
                 yield break;
             }
 
@@ -229,6 +434,8 @@ namespace KoG.MiniMvp.Buildings
                     if (code < 200 || code >= 300)
                     {
                         Emit("Place failed: " + BuildingJson.ExtractError(text));
+                        KoG.MiniMvp.Audio.MiniAudio.PlayError();
+                        PlacePreviewFx.RejectPulse();
                         RefreshPreview();
                         return;
                     }
@@ -475,24 +682,6 @@ namespace KoG.MiniMvp.Buildings
                 keepOut = BuildingDefinitionCatalog.GetOrDefault("castle").KeepOutChebyshev;
                 return;
             }
-        }
-
-        void RefreshPreview()
-        {
-            if (!_session.IsActive || _grid == null)
-            {
-                PlacePreviewFx.Hide();
-                return;
-            }
-
-            var world = _grid.GridToWorld(_session.Anchor.X, _session.Anchor.Z);
-            PlacePreviewFx.ShowFootprint(
-                world,
-                _grid.CellSize,
-                _session.Footprint.OccupiedWidth,
-                _session.Footprint.OccupiedDepth,
-                _session.Footprint.YawDegrees,
-                _session.IsValid);
         }
 
         void Emit(string msg)
