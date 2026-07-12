@@ -4,10 +4,13 @@ namespace KoG.MiniMvp.World
 {
     /// <summary>
     /// CoC-style selection ring under the active building (simulator / Play mode).
-    /// Pop-in + soft pulse; follows selected transform cheaply.
+    /// Pop-in + soft pulse + light Y-lift on the selected building; follows transform cheaply.
     /// </summary>
     public sealed class BuildingSelectFx : MonoBehaviour
     {
+        const float LiftY = 0.12f;
+        const float LiftSpeed = 14f;
+
         static BuildingSelectFx _instance;
         static Material _ringMat;
         Transform _ring;
@@ -15,6 +18,9 @@ namespace KoG.MiniMvp.World
         float _radius = 1f;
         float _pulse;
         float _pop;
+        float _baseY;
+        float _liftT;
+        bool _lifting;
 
         public static void Select(GameObject building)
         {
@@ -56,8 +62,18 @@ namespace KoG.MiniMvp.World
         {
             if (_ring == null) BuildRing();
             if (_ring == null) return;
+
+            // Drop previous selection before attaching a new one.
+            RestoreFollowY();
+
             enabled = true;
             _follow = follow;
+            _baseY = follow != null ? follow.position.y : 0f;
+            // If already slightly lifted from a prior select, prefer grounded base.
+            if (_baseY > 0.05f && _baseY < LiftY * 2f)
+                _baseY = 0f;
+            _lifting = true;
+            _liftT = 0f;
             _radius = Mathf.Max(radius, 0.5f);
             _ring.gameObject.SetActive(true);
             _ring.position = worldPos;
@@ -68,9 +84,19 @@ namespace KoG.MiniMvp.World
 
         void Hide()
         {
+            RestoreFollowY();
             _follow = null;
+            _lifting = false;
             if (_ring != null) _ring.gameObject.SetActive(false);
             enabled = false;
+        }
+
+        void RestoreFollowY()
+        {
+            if (_follow == null) return;
+            var p = _follow.position;
+            p.y = _baseY;
+            _follow.position = p;
         }
 
         void Update()
@@ -79,8 +105,17 @@ namespace KoG.MiniMvp.World
 
             if (_follow != null)
             {
-                var p = _follow.position;
-                _ring.position = new Vector3(p.x, 0.045f, p.z);
+                if (_lifting)
+                {
+                    _liftT = Mathf.Min(1f, _liftT + Time.unscaledDeltaTime * LiftSpeed);
+                    var ease = 1f - (1f - _liftT) * (1f - _liftT);
+                    var p = _follow.position;
+                    p.y = Mathf.Lerp(_baseY, _baseY + LiftY, ease);
+                    _follow.position = p;
+                }
+
+                var fp = _follow.position;
+                _ring.position = new Vector3(fp.x, 0.045f, fp.z);
             }
 
             _pop = Mathf.Min(1f, _pop + Time.unscaledDeltaTime * 8f);

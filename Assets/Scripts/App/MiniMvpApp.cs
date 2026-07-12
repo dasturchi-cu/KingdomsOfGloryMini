@@ -503,6 +503,8 @@ namespace KoG.MiniMvp.App
             if (!_buildingViews.TryGetValue(id, out var go) || go == null) return;
 
             var world = ResolveBuildingWorldPos(inst.Type, inst.Anchor.X, inst.Anchor.Z);
+            // Slight lift while dragging so the building reads as “picked up”.
+            world.y += 0.18f;
             go.transform.position = world;
             var marker = go.GetComponent<BuildingMarker>();
             if (marker != null)
