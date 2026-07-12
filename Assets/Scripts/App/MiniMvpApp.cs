@@ -67,6 +67,7 @@ namespace KoG.MiniMvp.App
         int _stateLoadGen;
         string _selectedBuildingId;
         bool _busy;
+        bool _loginStreakClaimedThisSession;
         Transform _fieldRoot;
         Transform _villageGameplay;
         CoCCameraController _cocCamera;
@@ -704,6 +705,7 @@ namespace KoG.MiniMvp.App
                 _save?.SyncFromCloud(res.playerId);
                 SetScreen(UiScreen.Game);
                 SetStatus("Ro‘yxat OK. Faqat qal’a — Keyingi: Kon → Tasdiq. ◆ Mana = askar.");
+                _loginStreakClaimedThisSession = false;
                 StartCoroutine(LoadPlayerState());
             });
         }
@@ -734,6 +736,7 @@ namespace KoG.MiniMvp.App
                 _save?.SyncFromCloud(res.playerId);
                 SetScreen(UiScreen.Game);
                 SetStatus("Kirish OK.");
+                _loginStreakClaimedThisSession = false;
                 StartCoroutine(LoadPlayerState());
             });
         }
@@ -861,7 +864,43 @@ namespace KoG.MiniMvp.App
                 RefreshHud();
                 EnsureSaveSystem();
                 _save.CapturePlayerState(state);
+                if (!_loginStreakClaimedThisSession)
+                    StartCoroutine(ClaimLoginStreakOnce());
             });
+        }
+
+        IEnumerator ClaimLoginStreakOnce()
+        {
+            if (_loginStreakClaimedThisSession) yield break;
+            _loginStreakClaimedThisSession = true;
+            if (string.IsNullOrEmpty(SessionStore.Token) || string.IsNullOrEmpty(SessionStore.PlayerId))
+                yield break;
+
+            var body = JsonObject(("playerId", SessionStore.PlayerId));
+            yield return _api.PostJson(
+                "/api/v1/rewards/login-streak",
+                body,
+                SessionStore.Token,
+                ApiClient.NewIdempotencyKey(),
+                (code, text) =>
+                {
+                    if (code < 200 || code >= 300) return;
+                    var res = JsonUtility.FromJson<LoginStreakResponse>(text);
+                    if (res == null) return;
+                    if (!string.IsNullOrEmpty(res.message) &&
+                        res.message.IndexOf("Already", StringComparison.OrdinalIgnoreCase) >= 0)
+                        return;
+                    if (res.goldRewarded <= 0 && res.diamondsRewarded <= 0) return;
+
+                    _gold += res.goldRewarded;
+                    _diamond += res.diamondsRewarded;
+                    RefreshHud();
+                    var msg = "Kunlik streak " + res.currentStreak + ": +" + res.goldRewarded + "●";
+                    if (res.diamondsRewarded > 0) msg += " +" + res.diamondsRewarded + "◇";
+                    SetStatus(msg);
+                    WorldFeedback.FloatLabel(FieldCenter + Vector3.up * 1.4f, msg, new Color(0.95f, 0.82f, 0.25f));
+                    MiniAudio.PlayCollect();
+                });
         }
 
         IEnumerator WaitTrainingThenReload(int seconds)
@@ -1012,12 +1051,18 @@ namespace KoG.MiniMvp.App
                 if (goldDelta > 0) parts.Add("+" + goldDelta + "●");
                 if (manaDelta > 0) parts.Add("+" + manaDelta + "◆");
                 var label = parts.Count > 0 ? string.Join(" ", parts) : "+0";
+                if (collected != null && collected.dailyMultiplierTriggered)
+                {
+                    label = "Kunlik ×2! " + label;
+                    WorldFeedback.FloatLabel(floatPos + Vector3.up * 0.55f, "Kunlik ×2!", new Color(0.35f, 0.95f, 0.55f));
+                }
                 WorldFeedback.FloatLabel(floatPos, label, new Color(1f, 0.85f, 0.2f));
                 WorldFeedback.PlaceBurst(floatPos);
                 MiniAudio.PlayCollect();
                 RefreshHud();
                 SetStatus(parts.Count > 0
-                    ? "Yig‘ildi " + label + " (oldingi ●" + beforeGold + " ◆" + beforeMana + ")"
+                    ? (collected != null && collected.dailyMultiplierTriggered ? "Kunlik ×2! " : "") +
+                      "Yig‘ildi " + string.Join(" ", parts) + " (oldingi ●" + beforeGold + " ◆" + beforeMana + ")"
                     : "Yig‘ish: hozircha 0");
                 StartCoroutine(LoadPlayerState());
             });

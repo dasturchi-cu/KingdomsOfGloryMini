@@ -128,6 +128,18 @@ namespace KoG.MiniMvp.Network
         public bool success;
         public long goldCollected;
         public long manaCollected;
+        public bool dailyMultiplierTriggered;
+        public string message;
+        public string error;
+    }
+
+    [Serializable]
+    public class LoginStreakResponse
+    {
+        public bool success;
+        public int currentStreak;
+        public long goldRewarded;
+        public long diamondsRewarded;
         public string message;
         public string error;
     }
