@@ -446,7 +446,7 @@ namespace KoG.MiniMvp.App
                 {
                     if (_hud != null) _hud.SetPlacementMode(false);
                     if (_troopInput != null) _troopInput.SetEnabled(true);
-                    StartCoroutine(LoadPlayerState());
+                    StartCoroutine(LoadPlayerStateAndBounceSelected());
                 };
             }
 
@@ -1115,6 +1115,16 @@ namespace KoG.MiniMvp.App
                 if (!_loginStreakClaimedThisSession)
                     StartCoroutine(ClaimLoginStreakOnce());
             });
+        }
+
+        IEnumerator LoadPlayerStateAndBounceSelected()
+        {
+            yield return LoadPlayerState();
+            if (!string.IsNullOrEmpty(_selectedBuildingId) &&
+                _buildingViews.TryGetValue(_selectedBuildingId, out var go) && go != null)
+            {
+                WorldFeedback.PlaceDrop(go.transform);
+            }
         }
 
         IEnumerator ClaimLoginStreakOnce()
@@ -1937,8 +1947,11 @@ namespace KoG.MiniMvp.App
                 BuildingSelectFx.Select(go);
                 MiniAudio.PlaySelect();
                 _buildings?.BindConstructionTimer(id);
-                if (_cocCamera != null)
-                    _cocCamera.FocusSmooth(ResolveBuildingWorldPos(type, gridX, gridZ));
+                 if (_cocCamera != null)
+                 {
+                     _cocCamera.FocusSmooth(ResolveBuildingWorldPos(type, gridX, gridZ));
+                     _cocCamera.Punch(0.18f, 0.22f);
+                 }
                 var construct = _buildings != null ? _buildings.DescribeConstruction(id) : null;
                 var label = "Selected: " + PrettyType(type) + " L" + level;
                 if (!string.IsNullOrEmpty(construct)) label += " · " + construct;

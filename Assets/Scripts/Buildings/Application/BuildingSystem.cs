@@ -215,6 +215,7 @@ namespace KoG.MiniMvp.Buildings
             }
 
             _session.Rotate(1);
+            KoG.MiniMvp.Audio.MiniAudio.PlaySnap();
             _session.Revalidate((a, f) => Validate(a, f, _session.BuildingType, null));
             if (!_session.IsValid)
             {

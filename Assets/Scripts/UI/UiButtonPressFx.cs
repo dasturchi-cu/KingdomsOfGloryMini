@@ -50,7 +50,12 @@ namespace KoG.MiniMvp.UI
             _rt.localScale = _target;
         }
 
-        public void OnPointerUp(PointerEventData eventData) => _target = _rest;
+        public void OnPointerUp(PointerEventData eventData)
+        {
+            Bind();
+            if (_rt != null) _rt.localScale = _rest * 1.04f;
+            _target = _rest;
+        }
 
         public void OnPointerExit(PointerEventData eventData) => _target = _rest;
     }

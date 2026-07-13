@@ -93,13 +93,14 @@ namespace KoG.MiniMvp.World
             var start = building.localScale;
             if (start.sqrMagnitude < 0.0001f) start = Vector3.one;
             var t0 = 0f;
-            const float life = 0.22f;
+            const float life = 0.35f;
             while (t0 < life && building != null)
             {
                 t0 += Time.deltaTime;
                 var k = Mathf.Clamp01(t0 / life);
-                var squash = 1f + Mathf.Sin(k * Mathf.PI) * 0.18f;
-                var stretch = 1f - Mathf.Sin(k * Mathf.PI) * 0.12f;
+                var bounce = Mathf.Sin(k * Mathf.PI * 3f) * 0.14f * (1f - k);
+                var squash = 1f + bounce;
+                var stretch = 1f - bounce;
                 building.localScale = new Vector3(start.x * squash, start.y * stretch, start.z * squash);
                 yield return null;
             }

@@ -32,6 +32,7 @@ namespace KoG.MiniMvp.World
         int _depth = 1;
         bool _canPlace = true;
         bool _visible;
+        float _appearT;
         float _rejectUntil;
         float _rejectAmp;
         string _buildingType;
@@ -118,6 +119,7 @@ namespace KoG.MiniMvp.World
             {
                 _root.position = _targetPos;
                 _followVel = Vector3.zero;
+                _appearT = 0f;
             }
 
             _root.rotation = Quaternion.Euler(0f, _yaw, 0f);
@@ -134,6 +136,7 @@ namespace KoG.MiniMvp.World
             _followVel = Vector3.zero;
             _rejectAmp = 0f;
             _rejectUntil = 0f;
+            _appearT = 0f;
         }
 
         void LateUpdate()
@@ -161,14 +164,17 @@ namespace KoG.MiniMvp.World
 
             _root.position = pos;
 
+            _appearT = Mathf.Min(1f, _appearT + Time.unscaledDeltaTime * 6f);
+            var scalePop = 1f - Mathf.Pow(1f - _appearT, 3f);
+
             // Soft pulse — valid breathes, invalid flickers slightly.
             var pulse = 1f + Mathf.Sin(Time.unscaledTime * Mathf.PI * 2f * PulseHz) *
                         (_canPlace ? 0.035f : 0.055f);
             if (_ghost != null)
                 _ghost.localScale = new Vector3(
-                    _width * _cellSize * 0.72f * pulse,
-                    GhostHeight * pulse,
-                    _depth * _cellSize * 0.72f * pulse);
+                    _width * _cellSize * 0.72f * pulse * scalePop,
+                    GhostHeight * pulse * scalePop,
+                    _depth * _cellSize * 0.72f * pulse * scalePop);
         }
 
         void LayoutTiles(bool canPlace)
@@ -177,6 +183,7 @@ namespace KoG.MiniMvp.World
             while (_tiles.Count < needed)
                 _tiles.Add(CreateTile());
 
+            var scalePop = 1f - Mathf.Pow(1f - _appearT, 3f);
             var mat = canPlace ? _okMat : _badMat;
             for (var i = 0; i < _tiles.Count; i++)
             {
@@ -187,7 +194,7 @@ namespace KoG.MiniMvp.World
                 var lx = i % _width;
                 var lz = i / _width;
                 _tiles[i].transform.localPosition = new Vector3(lx * _cellSize, 0f, lz * _cellSize);
-                var s = _cellSize * 0.92f;
+                var s = _cellSize * 0.92f * scalePop;
                 _tiles[i].transform.localScale = new Vector3(s, s, 1f);
                 _tiles[i].sharedMaterial = mat;
             }
@@ -207,15 +214,19 @@ namespace KoG.MiniMvp.World
                 _ghostRend.receiveShadows = false;
             }
 
+            var scalePop = 1f - Mathf.Pow(1f - _appearT, 3f);
+            var pulse = 1f + Mathf.Sin(Time.unscaledTime * Mathf.PI * 2f * PulseHz) *
+                        (_canPlace ? 0.035f : 0.055f);
+
             // Anchor is corner of footprint — ghost sits over footprint mid.
             _ghost.localPosition = new Vector3(
                 (_width - 1) * _cellSize * 0.5f,
-                GhostHeight * 0.5f,
+                GhostHeight * 0.5f * scalePop,
                 (_depth - 1) * _cellSize * 0.5f);
             _ghost.localScale = new Vector3(
-                _width * _cellSize * 0.72f,
-                GhostHeight,
-                _depth * _cellSize * 0.72f);
+                _width * _cellSize * 0.72f * pulse * scalePop,
+                GhostHeight * pulse * scalePop,
+                _depth * _cellSize * 0.72f * pulse * scalePop);
             _ghostRend.sharedMaterial = canPlace ? _ghostOkMat : _ghostBadMat;
             TintGhostForType(_buildingType, canPlace);
             _ghost.gameObject.SetActive(true);

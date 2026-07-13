@@ -108,7 +108,7 @@ namespace KoG.MiniMvp.World
                 if (_lifting)
                 {
                     _liftT = Mathf.Min(1f, _liftT + Time.unscaledDeltaTime * LiftSpeed);
-                    var ease = 1f - (1f - _liftT) * (1f - _liftT);
+                    var ease = 1f - Mathf.Pow(1f - _liftT, 3f) * Mathf.Cos(_liftT * Mathf.PI * 1.5f);
                     var p = _follow.position;
                     p.y = Mathf.Lerp(_baseY, _baseY + LiftY, ease);
                     _follow.position = p;
@@ -119,7 +119,7 @@ namespace KoG.MiniMvp.World
             }
 
             _pop = Mathf.Min(1f, _pop + Time.unscaledDeltaTime * 8f);
-            var popEase = 1f - (1f - _pop) * (1f - _pop);
+            var popEase = 1f - Mathf.Pow(1f - _pop, 3f) * Mathf.Cos(_pop * Mathf.PI * 1.5f);
             _pulse += Time.unscaledDeltaTime * 3.8f;
             var breath = 1f + Mathf.Sin(_pulse) * 0.07f;
             ApplyScale(Mathf.Lerp(0.72f, 1f, popEase) * breath);
