@@ -261,48 +261,66 @@ namespace KoG.MiniMvp.Troops
             const float sepRadiusSqr = sepRadius * sepRadius;
             const float forceStrength = 1.6f;
 
+            // Stagger calculation: only update a third of the active troops each frame
+            var buckets = 3;
+            var bucket = Time.frameCount % buckets;
+
             for (var i = 0; i < count; i++)
             {
                 var a = _active[i];
                 if (a == null || !a.IsAlive) continue;
 
-                var posA = a.transform.position;
-                var pushDir = Vector3.zero;
-                var overlaps = 0;
-
-                for (var j = 0; j < count; j++)
+                // Recalculate separation push only if in the current stagger bucket
+                if ((i % buckets) == bucket)
                 {
-                    if (i == j) continue;
-                    var b = _active[j];
-                    if (b == null || !b.IsAlive) continue;
+                    var posA = a.transform.position;
+                    var pushDir = Vector3.zero;
+                    var overlaps = 0;
 
-                    var posB = b.transform.position;
-                    var dx = posA.x - posB.x;
-                    var dz = posA.z - posB.z;
-                    var distSqr = dx * dx + dz * dz;
-
-                    if (distSqr < sepRadiusSqr)
+                    for (var j = 0; j < count; j++)
                     {
-                        var dist = Mathf.Sqrt(distSqr);
-                        if (dist > 0.001f)
+                        if (i == j) continue;
+                        var b = _active[j];
+                        if (b == null || !b.IsAlive) continue;
+
+                        var posB = b.transform.position;
+                        var dx = posA.x - posB.x;
+                        var dz = posA.z - posB.z;
+                        var distSqr = dx * dx + dz * dz;
+
+                        if (distSqr < sepRadiusSqr)
                         {
-                            pushDir.x += (dx / dist) * (sepRadius - dist);
-                            pushDir.z += (dz / dist) * (sepRadius - dist);
+                            var dist = Mathf.Sqrt(distSqr);
+                            if (dist > 0.001f)
+                            {
+                                pushDir.x += (dx / dist) * (sepRadius - dist);
+                                pushDir.z += (dz / dist) * (sepRadius - dist);
+                            }
+                            else
+                            {
+                                pushDir.x += UnityEngine.Random.Range(-0.1f, 0.1f);
+                                pushDir.z += UnityEngine.Random.Range(-0.1f, 0.1f);
+                            }
+                            overlaps++;
                         }
-                        else
-                        {
-                            pushDir.x += UnityEngine.Random.Range(-0.1f, 0.1f);
-                            pushDir.z += UnityEngine.Random.Range(-0.1f, 0.1f);
-                        }
-                        overlaps++;
+                    }
+
+                    if (overlaps > 0)
+                    {
+                        var push = pushDir * forceStrength;
+                        push.y = 0f;
+                        a.SeparationPush = push;
+                    }
+                    else
+                    {
+                        a.SeparationPush = Vector3.zero;
                     }
                 }
 
-                if (overlaps > 0)
+                // Apply stashed push step every frame for visual smoothness
+                if (a.SeparationPush.sqrMagnitude > 0.0001f)
                 {
-                    var pushStep = pushDir * (forceStrength * dt);
-                    pushStep.y = 0f;
-                    
+                    var pushStep = a.SeparationPush * dt;
                     var maxPush = 2f * dt;
                     if (pushStep.sqrMagnitude > maxPush * maxPush)
                     {

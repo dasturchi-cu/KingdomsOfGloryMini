@@ -86,6 +86,7 @@ namespace KoG.MiniMvp.App
         TroopSystem _troops;
         TroopInputDriver _troopInput;
         SaveSystem _save;
+        public GameStateMachine StateMachine { get; private set; } = new GameStateMachine();
 
         /// <summary>World center of the playable checkerboard (castle sits here).</summary>
         Vector3 FieldCenter => new Vector3((gridSize - 1) * cellSize * 0.5f, 0f, (gridSize - 1) * cellSize * 0.5f);
@@ -432,7 +433,7 @@ namespace KoG.MiniMvp.App
             {
                 _buildings = GetComponent<BuildingSystem>();
                 if (_buildings == null) _buildings = gameObject.AddComponent<BuildingSystem>();
-                _buildings.Configure(_api, () => SessionStore.Token, () => SessionStore.PlayerId, _buildingGrid);
+                _buildings.Configure(_api, () => SessionStore.Token, () => SessionStore.PlayerId, _buildingGrid, StateMachine);
                 _buildings.StatusChanged += msg => SetStatus(msg);
                 _buildings.StateChanged += OnBuildingStateChanged;
                 _buildings.PreviewCellChanged += valid =>
@@ -471,6 +472,7 @@ namespace KoG.MiniMvp.App
             BuildingSelectFx.Clear();
             RefreshHud();
             SetStatus("Tanlov bekor");
+            StateMachine.TransitionTo(GameState.Idle);
         }
 
         void WireCameraPanBlock()
@@ -488,8 +490,10 @@ namespace KoG.MiniMvp.App
             if (_cocCamera != null)
             {
                 _cocCamera.BlocksPan = () =>
-                    (_placementInput != null && _placementInput.BlocksCameraPan) ||
-                    (_buildings != null && _buildings.BlocksCameraPan);
+                    StateMachine.CurrentState == GameState.Building ||
+                    StateMachine.CurrentState == GameState.Relocating ||
+                    StateMachine.CurrentState == GameState.Busy ||
+                    (_placementInput != null && _placementInput.BlocksCameraPan);
             }
         }
 
@@ -708,6 +712,13 @@ namespace KoG.MiniMvp.App
             _hud.ShowAuth(screen == UiScreen.Auth);
             _hud.ShowGame(screen == UiScreen.Game);
             _hud.ShowResult(screen == UiScreen.Result);
+            if (screen == UiScreen.Game)
+            {
+                if (StateMachine.CurrentState == GameState.Loading)
+                {
+                    StateMachine.TransitionTo(GameState.Idle);
+                }
+            }
             RefreshHud();
         }
 
@@ -1642,9 +1653,9 @@ namespace KoG.MiniMvp.App
             var ok = false;
             yield return _api.PostJson("/api/v1/campaign/start", body, SessionStore.Token, ApiClient.NewIdempotencyKey(), (code, text) =>
             {
-                SetBusy(false);
                 if (code < 200 || code >= 300)
                 {
+                    SetBusy(false);
                     MiniAudio.PlayError();
                     SetStatus("Reyd start xato: " + ExtractError(text));
                     return;
@@ -1653,6 +1664,7 @@ namespace KoG.MiniMvp.App
                 ok = true;
                 _raidStartedAt = Time.realtimeSinceStartup;
                 _raidActive = true;
+                SetBusy(false);
                 if (_hud != null)
                 {
                     _hud.SetRaidCompleteReady(false, 30);
@@ -1764,9 +1776,9 @@ namespace KoG.MiniMvp.App
                 ApiClient.NewIdempotencyKey(),
                 (code, text) =>
                 {
-                    SetBusy(false);
                     if (code < 200 || code >= 300)
                     {
+                        SetBusy(false);
                         MiniAudio.PlayError();
                         SetStatus("Reyd yakun xato: " + ExtractError(text));
                         return;
@@ -1778,12 +1790,14 @@ namespace KoG.MiniMvp.App
 
             if (!ok || res == null)
             {
+                SetBusy(false);
                 // Keep raid session so player can retry Yakunla without full restart.
                 if (_hud != null) _hud.SetRaidCompleteReady(true, 0);
                 yield break;
             }
 
             _raidActive = false;
+            SetBusy(false);
             if (_raidCountdownCo != null)
             {
                 StopCoroutine(_raidCountdownCo);
@@ -1919,6 +1933,7 @@ namespace KoG.MiniMvp.App
                 if (Time.unscaledTime < BuildingClickRelay.SuppressUntilTime) return;
                 _pendingDestroyId = null;
                 _selectedBuildingId = id;
+                StateMachine.TransitionTo(GameState.Selecting);
                 BuildingSelectFx.Select(go);
                 MiniAudio.PlaySelect();
                 _buildings?.BindConstructionTimer(id);
@@ -1993,10 +2008,31 @@ namespace KoG.MiniMvp.App
             RefreshHud();
         }
 
+        GameState EvaluateNextState()
+        {
+            if (_raidActive) return GameState.Raiding;
+            if (_buildings != null && _buildings.IsPlacing) return GameState.Building;
+            if (_buildings != null && _buildings.IsRelocating) return GameState.Relocating;
+            if (!string.IsNullOrEmpty(_selectedBuildingId)) return GameState.Selecting;
+            return GameState.Idle;
+        }
+
         void SetBusy(bool busy)
         {
             _busy = busy;
             if (_hud != null) _hud.SetBusy(_busy);
+
+            if (busy)
+            {
+                StateMachine.TransitionTo(GameState.Busy);
+            }
+            else
+            {
+                if (StateMachine.CurrentState == GameState.Busy)
+                {
+                    StateMachine.TransitionTo(EvaluateNextState());
+                }
+            }
         }
 
         static string ExtractError(string text)

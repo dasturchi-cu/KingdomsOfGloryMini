@@ -32,8 +32,10 @@ namespace KoG.MiniMvp.Buildings
         static readonly Collider[] PhysicsValidationHits = new Collider[32];
         bool _busy;
 
-        public bool IsPlacing => _session.IsActive;
-        public bool IsRelocating => !string.IsNullOrEmpty(_relocateBuildingId);
+        GameStateMachine _stateMachine;
+
+        public bool IsPlacing => _stateMachine != null ? _stateMachine.CurrentState == GameState.Building : _session.IsActive;
+        public bool IsRelocating => _stateMachine != null ? _stateMachine.CurrentState == GameState.Relocating : !string.IsNullOrEmpty(_relocateBuildingId);
         public bool IsBusy => _busy;
         public bool BlocksCameraPan => IsPlacing || IsRelocating;
         public PlacementSession Session => _session;
@@ -46,12 +48,13 @@ namespace KoG.MiniMvp.Buildings
         string _relocateType;
         bool _relocateValid;
 
-        public void Configure(ApiClient api, Func<string> token, Func<string> playerId, BuildingGrid grid)
+        public void Configure(ApiClient api, Func<string> token, Func<string> playerId, BuildingGrid grid, GameStateMachine stateMachine = null)
         {
             _api = api;
             _token = token;
             _playerId = playerId;
             _grid = grid;
+            _stateMachine = stateMachine;
             _occupancy = new GridOccupancyMap(grid != null ? grid.GridSize : 20);
         }
 
@@ -158,6 +161,16 @@ namespace KoG.MiniMvp.Buildings
                 }
             }
 
+            if (_stateMachine != null)
+            {
+                if (!_stateMachine.CanTransitionTo(GameState.Building))
+                {
+                    Emit("Hozir bino qurib bo'lmaydi");
+                    return false;
+                }
+                _stateMachine.TransitionTo(GameState.Building);
+            }
+
             var def = BuildingDefinitionCatalog.GetOrDefault(buildingType);
             var footprint = def.DefaultFootprint;
             FindCastle(out var castle, out var keepOut);
@@ -166,6 +179,7 @@ namespace KoG.MiniMvp.Buildings
             {
                 Emit("Bo'sh katak yo'q");
                 PlacePreviewFx.Hide();
+                if (_stateMachine != null) _stateMachine.TransitionTo(GameState.Idle);
                 return false;
             }
 
@@ -182,6 +196,10 @@ namespace KoG.MiniMvp.Buildings
             _session.Cancel();
             PlacePreviewFx.Hide();
             Emit("Joylashtirish bekor");
+            if (_stateMachine != null)
+            {
+                _stateMachine.TransitionTo(GameState.Idle);
+            }
             StateChanged?.Invoke();
         }
 
@@ -236,6 +254,12 @@ namespace KoG.MiniMvp.Buildings
             if (_session.IsActive || IsRelocating) return false;
             if (!_instances.TryGetValue(buildingId, out var inst)) return false;
 
+            if (_stateMachine != null)
+            {
+                if (!_stateMachine.CanTransitionTo(GameState.Relocating)) return false;
+                _stateMachine.TransitionTo(GameState.Relocating);
+            }
+
             _relocateBuildingId = buildingId;
             _relocateOrigin = inst.Anchor;
             _relocateFootprint = inst.Footprint;
@@ -286,6 +310,10 @@ namespace KoG.MiniMvp.Buildings
             ClearRelocate();
             PlacePreviewFx.Hide();
             Emit("Ko‘chirish bekor");
+            if (_stateMachine != null)
+            {
+                _stateMachine.TransitionTo(GameState.Selecting);
+            }
             StateChanged?.Invoke();
         }
 
@@ -297,6 +325,7 @@ namespace KoG.MiniMvp.Buildings
             if (!_instances.TryGetValue(_relocateBuildingId, out var inst))
             {
                 ClearRelocate();
+                if (_stateMachine != null) _stateMachine.TransitionTo(GameState.Idle);
                 yield break;
             }
 
@@ -311,6 +340,7 @@ namespace KoG.MiniMvp.Buildings
                 StateChanged?.Invoke();
                 ClearRelocate();
                 PlacePreviewFx.Hide();
+                if (_stateMachine != null) _stateMachine.TransitionTo(GameState.Selecting);
                 StateChanged?.Invoke();
                 yield break;
             }
@@ -321,6 +351,7 @@ namespace KoG.MiniMvp.Buildings
                 StateChanged?.Invoke();
                 ClearRelocate();
                 PlacePreviewFx.Hide();
+                if (_stateMachine != null) _stateMachine.TransitionTo(GameState.Selecting);
                 StateChanged?.Invoke();
                 yield break;
             }
@@ -333,6 +364,10 @@ namespace KoG.MiniMvp.Buildings
             }
 
             var buildingId = _relocateBuildingId;
+            if (_stateMachine != null)
+            {
+                _stateMachine.TransitionTo(GameState.Busy);
+            }
             _busy = true;
             Emit("Ko‘chirilmoqda...");
             var body = BuildingJson.Object(
@@ -359,6 +394,7 @@ namespace KoG.MiniMvp.Buildings
                         StateChanged?.Invoke();
                         ClearRelocate();
                         PlacePreviewFx.Hide();
+                        if (_stateMachine != null) _stateMachine.TransitionTo(GameState.Selecting);
                         StateChanged?.Invoke();
                         return;
                     }
@@ -372,6 +408,7 @@ namespace KoG.MiniMvp.Buildings
                     PlacePreviewFx.Hide();
                     KoG.MiniMvp.Audio.MiniAudio.PlayPlace();
                     Emit("Joyiga qo‘yildi");
+                    if (_stateMachine != null) _stateMachine.TransitionTo(GameState.Selecting);
                     MutationSucceeded?.Invoke();
                     StateChanged?.Invoke();
                 });
@@ -442,6 +479,10 @@ namespace KoG.MiniMvp.Buildings
             var type = _session.BuildingType;
             var anchor = _session.Anchor;
             var rotation = _session.Footprint.RotationSteps;
+            if (_stateMachine != null)
+            {
+                _stateMachine.TransitionTo(GameState.Busy);
+            }
             _busy = true;
             Emit("Placing " + type + "...");
 
@@ -467,6 +508,7 @@ namespace KoG.MiniMvp.Buildings
                         KoG.MiniMvp.Audio.MiniAudio.PlayError();
                         PlacePreviewFx.RejectPulse();
                         RefreshPreview();
+                        if (_stateMachine != null) _stateMachine.TransitionTo(GameState.Building);
                         return;
                     }
 
@@ -474,6 +516,7 @@ namespace KoG.MiniMvp.Buildings
                     PlacePreviewFx.Hide();
                     KoG.MiniMvp.Audio.MiniAudio.PlayPlace();
                     Emit("OK: " + Pretty(type) + " qo'yildi");
+                    if (_stateMachine != null) _stateMachine.TransitionTo(GameState.Idle);
                     MutationSucceeded?.Invoke();
                     StateChanged?.Invoke();
                 });

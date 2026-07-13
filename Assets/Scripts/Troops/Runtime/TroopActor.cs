@@ -58,6 +58,8 @@ namespace KoG.MiniMvp.Troops
         public DamageResult ApplyHit(in DamageInfo info) =>
             _combat != null ? _combat.ApplyHit(in info) : default;
 
+        public Vector3 SeparationPush { get; set; }
+
         public void BindDefinition(TroopDefinition def)
         {
             _def = def;
@@ -115,6 +117,7 @@ namespace KoG.MiniMvp.Troops
             Died = null;
             AttackHit = null;
             Despawned = null;
+            SeparationPush = Vector3.zero;
         }
 
         public void SetSelected(bool selected)
