@@ -110,7 +110,7 @@ namespace KoG.MiniMvp.World
                 foreach (var t in border.GetComponentsInChildren<Transform>(true))
                 {
                     var n = t.gameObject.name.ToLowerInvariant();
-                    if (n.Contains("tree") || n.Contains("birch") || n.Contains("pine"))
+                    if (n.Contains("tree") || n.Contains("birch") || n.Contains("pine") || n.Contains("wood") || n.Contains("canopy"))
                     {
                         t.gameObject.SetActive(false);
                     }
