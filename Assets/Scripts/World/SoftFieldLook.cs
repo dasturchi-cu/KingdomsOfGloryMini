@@ -143,8 +143,8 @@ namespace KoG.MiniMvp.World
             tex.name = "KoG_FieldChecker_" + cells;
 
             byte a = opaque ? (byte)255 : (byte)220;
-            var light = new Color32(148, 210, 88, a);
-            var dark = new Color32(128, 188, 72, a);
+            var light = new Color32(158, 214, 85, a);
+            var dark = new Color32(140, 194, 69, a);
 
             for (var y = 0; y < size; y++)
             {
@@ -168,10 +168,10 @@ namespace KoG.MiniMvp.World
             tex.wrapMode = TextureWrapMode.Clamp;
             tex.name = "SoftFieldCombined_" + cells;
 
-            var a = new Color32(158, 220, 102, 90);
-            var b = new Color32(142, 205, 92, 90);
-            var rim = new Color32(72, 110, 52, 200);
-            var rimInner = new Color32(88, 130, 60, 140);
+            var a = new Color32(158, 214, 85, 90);
+            var b = new Color32(140, 194, 69, 90);
+            var rim = new Color32(76, 119, 30, 200);
+            var rimInner = new Color32(95, 143, 40, 140);
 
             for (var y = 0; y < size; y++)
             {

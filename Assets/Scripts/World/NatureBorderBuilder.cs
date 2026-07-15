@@ -58,7 +58,7 @@ namespace KoG.MiniMvp.World
             EnsureMats();
             EnsurePrefabs();
             BuildOuterWorld(fieldRoot, fieldWorldSize);
-            BuildTreeRing(fieldRoot, fieldWorldSize);
+            // BuildTreeRing(fieldRoot, fieldWorldSize); // Yer yonidagi daraxtlar hozircha shartmas (only texture & border layout)
         }
 
         static void BuildOuterWorld(Transform fieldRoot, float fieldWorldSize)

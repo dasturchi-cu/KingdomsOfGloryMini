@@ -105,6 +105,17 @@ namespace KoG.MiniMvp.World
                 MarkStatic(border);
                 UrpMaterialUtil.RemapToUrp(border);
                 OptimizeNatureRenderers(border);
+
+                // Disable 3D trees on the border per user request: "yer yonidagi daraxatlar hozircha shartmas"
+                foreach (var t in border.GetComponentsInChildren<Transform>(true))
+                {
+                    var n = t.gameObject.name.ToLowerInvariant();
+                    if (n.Contains("tree") || n.Contains("birch") || n.Contains("pine"))
+                    {
+                        t.gameObject.SetActive(false);
+                    }
+                }
+
                 // In-place quality only — never relocate / regenerate border props.
                 NatureVisualPolish.Apply(border, fieldWorldSize, fieldCenter);
             }
