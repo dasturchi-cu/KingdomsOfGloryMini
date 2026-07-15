@@ -1213,7 +1213,11 @@ namespace KoG.MiniMvp.UI
             CenterLabel(_resultLoot);
 
             _resultBody = Label(sheet, "Body", "", 20, TextAnchor.UpperLeft,
-                new Vector2(28f, -140f), new Vector2(660f, 160f), new Color(1f, 0.95f, 0.7f));
+                new Vector2(28f, -140f), new Vector2(660f, 140f), new Color(1f, 0.95f, 0.7f));
+
+            Label(sheet, "Disclaimer", "★ Natijalar server tomonidan hisoblangan va sinxronizatsiya qilingan.", 13, TextAnchor.MiddleCenter,
+                new Vector2(28f, -292f), new Vector2(660f, 22f), new Color(0.55f, 0.7f, 0.55f));
+
             var okX = -100f;
             MakeBtn(sheet, "Ok", "OK — bazaga", ref okX, -170f, 280f, 0f, 56f,
                 new Color(0.28f, 0.48f, 0.28f), () => Safe(OnResultOk));
